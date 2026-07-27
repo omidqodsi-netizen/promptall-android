@@ -1,0 +1,49 @@
+# promptAll Native Android
+
+اپلیکیشن Native اندروید برای نمایش پرامپت‌های سایت promptall.ir.
+
+## قابلیت‌های پیاده‌سازی‌شده
+
+- رابط کاملاً Native با Kotlin و Jetpack Compose
+- تم دارک و نمایش Edge-to-edge
+- گرید دو ستونه Masonry با حفظ نسبت واقعی تصاویر
+- کپی متن پرامپت از روی کارت
+- علاقه‌مندی آفلاین با Room
+- جست‌وجوی تأخیردار (debounced) در عنوان و متن پرامپت
+- صفحه‌بندی و بارگذاری خودکار هنگام اسکرول
+- صفحه اطلاعات نرم‌افزار
+- تنها مجوز مورد استفاده: اینترنت
+
+## API مورد انتظار
+
+`GET https://promptall.ir/wp-json/promptall/v1/prompts?page=1&per_page=20&search=`
+
+نمونه پاسخ:
+
+```json
+{
+  "items": [
+    {
+      "id": 11244,
+      "title": "عنوان پرامپت",
+      "prompt_text": "متن کامل پرامپت",
+      "image": {
+        "url": "https://promptall.ir/example.webp",
+        "width": 1024,
+        "height": 1536
+      }
+    }
+  ],
+  "page": 1,
+  "total_pages": 10,
+  "has_more": true
+}
+```
+
+تا پیش از نصب افزونه API، نمایش خطای اتصال در اپ طبیعی است.
+
+## ساخت
+
+پروژه را با Android Studio باز کنید، Gradle Sync را اجرا کنید و سپس نسخه Debug
+یا Release را بسازید. برای انتشار یا به‌روزرسانی نسخه قبلی باید همان کلید امضای
+نسخه منتشرشده استفاده شود.
