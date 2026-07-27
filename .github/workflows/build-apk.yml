@@ -1,0 +1,46 @@
+name: Build promptAll APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+
+      - name: Build installable test APK
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Collect output
+        shell: bash
+        run: |
+          mkdir -p release
+          cp app/build/outputs/apk/debug/app-debug.apk release/promptAll-v3.0.0-test.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: promptAll-v3.0.0-test
+          path: release/
+          if-no-files-found: error
+          retention-days: 30
