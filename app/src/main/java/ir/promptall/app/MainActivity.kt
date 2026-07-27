@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
@@ -33,6 +34,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Home
@@ -55,6 +57,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -76,11 +79,15 @@ import ir.promptall.app.data.remote.PromptDto
 import ir.promptall.app.data.remote.PromptImage
 import ir.promptall.app.ui.PromptViewModel
 import ir.promptall.app.ui.theme.PromptAllTheme
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        )
         setContent {
             PromptAllTheme {
                 val vm: PromptViewModel = viewModel()
@@ -98,10 +105,10 @@ private fun PromptAllApp(vm: PromptViewModel) {
     val state by vm.state
     val saved by vm.favorites.collectAsStateWithLifecycle()
     val tabs = listOf(
-        Tab("خانه") { Icon(Icons.Default.Home, null, Modifier.size(21.dp)) },
-        Tab("جست‌وجو") { Icon(Icons.Default.Search, null, Modifier.size(21.dp)) },
-        Tab("علاقه‌مندی") { Icon(Icons.Default.Favorite, null, Modifier.size(21.dp)) },
-        Tab("تنظیمات") { Icon(Icons.Default.Settings, null, Modifier.size(21.dp)) },
+        Tab("خانه") { Icon(Icons.Default.Home, null, Modifier.size(20.dp)) },
+        Tab("جست‌وجو") { Icon(Icons.Default.Search, null, Modifier.size(20.dp)) },
+        Tab("علاقه‌مندی") { Icon(Icons.Default.Favorite, null, Modifier.size(20.dp)) },
+        Tab("تنظیمات") { Icon(Icons.Default.Settings, null, Modifier.size(20.dp)) },
     )
 
     Scaffold(
@@ -109,11 +116,11 @@ private fun PromptAllApp(vm: PromptViewModel) {
         bottomBar = {
             Box(
                 Modifier.fillMaxWidth().navigationBarsPadding()
-                    .padding(horizontal = 14.dp, vertical = 6.dp)
+                    .padding(horizontal = 14.dp, vertical = 5.dp)
             ) {
                 NavigationBar(
-                    modifier = Modifier.fillMaxWidth().height(64.dp)
-                        .clip(RoundedCornerShape(22.dp)),
+                    modifier = Modifier.fillMaxWidth().height(60.dp)
+                        .clip(RoundedCornerShape(20.dp)),
                     containerColor = Color(0xF5181A21),
                     tonalElevation = 8.dp,
                 ) {
@@ -127,8 +134,8 @@ private fun PromptAllApp(vm: PromptViewModel) {
                                 indicatorColor = Color(0xFF34394F),
                                 selectedIconColor = Color(0xFFB6BEFF),
                                 selectedTextColor = Color(0xFFE9EBFF),
-                                unselectedIconColor = Color(0xFF8A8E9A),
-                                unselectedTextColor = Color(0xFF8A8E9A),
+                                unselectedIconColor = Color(0xFFA5A8B2),
+                                unselectedTextColor = Color(0xFFA5A8B2),
                             ),
                         )
                     }
@@ -208,7 +215,8 @@ private fun Feed(
     Column(Modifier.fillMaxSize().then(if (showTopPadding) Modifier.statusBarsPadding() else Modifier)) {
         Text(
             title,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            modifier = Modifier.fillMaxWidth()
+                .padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 14.dp),
             textAlign = TextAlign.Right,
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
@@ -246,6 +254,13 @@ private fun Feed(
 @Composable
 private fun PromptCard(item: PromptDto, favorite: Boolean, onFavorite: () -> Unit) {
     val context = LocalContext.current
+    var copied by remember(item.id) { mutableStateOf(false) }
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(1_400)
+            copied = false
+        }
+    }
     val ratio = (item.image.width.toFloat() / item.image.height.coerceAtLeast(1))
         .coerceIn(0.55f, 1.5f)
     Box(
@@ -267,19 +282,22 @@ private fun PromptCard(item: PromptDto, favorite: Boolean, onFavorite: () -> Uni
         )
         IconButton(
             onClick = onFavorite,
-            modifier = Modifier.align(Alignment.TopEnd).padding(7.dp).size(36.dp)
-                .background(Color(0xB314151A), CircleShape),
+            modifier = Modifier.align(Alignment.TopEnd).padding(7.dp).size(34.dp)
+                .background(Color(0xA614151A), CircleShape),
         ) {
             Icon(
                 if (favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                 null,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(18.dp),
                 tint = if (favorite) Color(0xFFFF5B73) else Color.White,
             )
         }
         Button(
-            onClick = { copyPrompt(context, item.promptText) },
-            modifier = Modifier.align(Alignment.BottomCenter).padding(8.dp).height(38.dp),
+            onClick = {
+                copyPrompt(context, item.promptText)
+                copied = true
+            },
+            modifier = Modifier.align(Alignment.BottomCenter).padding(8.dp).height(36.dp),
             shape = RoundedCornerShape(12.dp),
             contentPadding = PaddingValues(horizontal = 13.dp, vertical = 0.dp),
             border = BorderStroke(1.dp, Color(0x557C8CFF)),
@@ -288,8 +306,16 @@ private fun PromptCard(item: PromptDto, favorite: Boolean, onFavorite: () -> Uni
                 contentColor = Color(0xFFB8C0FF),
             ),
         ) {
-            Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp))
-            Text("  کپی پرامپت", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            Icon(
+                if (copied) Icons.Default.Check else Icons.Default.ContentCopy,
+                null,
+                modifier = Modifier.size(15.dp),
+            )
+            Text(
+                if (copied) "  کپی شد" else "  کپی پرامپت",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
         }
     }
 }
