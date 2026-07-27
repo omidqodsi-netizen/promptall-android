@@ -11,6 +11,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
@@ -65,6 +67,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
@@ -95,35 +98,40 @@ private fun PromptAllApp(vm: PromptViewModel) {
     val state by vm.state
     val saved by vm.favorites.collectAsStateWithLifecycle()
     val tabs = listOf(
-        Tab("خانه") { Icon(Icons.Default.Home, null) },
-        Tab("جست‌وجو") { Icon(Icons.Default.Search, null) },
-        Tab("علاقه‌مندی") { Icon(Icons.Default.Favorite, null) },
-        Tab("تنظیمات") { Icon(Icons.Default.Settings, null) },
+        Tab("خانه") { Icon(Icons.Default.Home, null, Modifier.size(21.dp)) },
+        Tab("جست‌وجو") { Icon(Icons.Default.Search, null, Modifier.size(21.dp)) },
+        Tab("علاقه‌مندی") { Icon(Icons.Default.Favorite, null, Modifier.size(21.dp)) },
+        Tab("تنظیمات") { Icon(Icons.Default.Settings, null, Modifier.size(21.dp)) },
     )
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-            NavigationBar(
-                modifier = Modifier.navigationBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp)
-                    .clip(RoundedCornerShape(28.dp)),
-                containerColor = Color(0xEE181A21),
-                tonalElevation = 12.dp,
+            Box(
+                Modifier.fillMaxWidth().navigationBarsPadding()
+                    .padding(horizontal = 14.dp, vertical = 6.dp)
             ) {
-                tabs.forEachIndexed { index, tab ->
-                    NavigationBarItem(
-                        selected = selected == index,
-                        onClick = { selected = index },
-                        icon = tab.icon,
-                        label = { Text(tab.title) },
-                        colors = NavigationBarItemDefaults.colors(
-                            indicatorColor = Color(0xFF303550),
-                            selectedIconColor = Color(0xFFAEB7FF),
-                            selectedTextColor = Color.White,
-                            unselectedIconColor = Color(0xFF8D909B),
-                            unselectedTextColor = Color(0xFF8D909B),
-                        ),
-                    )
+                NavigationBar(
+                    modifier = Modifier.fillMaxWidth().height(64.dp)
+                        .clip(RoundedCornerShape(22.dp)),
+                    containerColor = Color(0xF5181A21),
+                    tonalElevation = 8.dp,
+                ) {
+                    tabs.forEachIndexed { index, tab ->
+                        NavigationBarItem(
+                            selected = selected == index,
+                            onClick = { selected = index },
+                            icon = tab.icon,
+                            label = { Text(tab.title, fontSize = 10.sp) },
+                            colors = NavigationBarItemDefaults.colors(
+                                indicatorColor = Color(0xFF34394F),
+                                selectedIconColor = Color(0xFFB6BEFF),
+                                selectedTextColor = Color(0xFFE9EBFF),
+                                unselectedIconColor = Color(0xFF8A8E9A),
+                                unselectedTextColor = Color(0xFF8A8E9A),
+                            ),
+                        )
+                    }
                 }
             }
         },
@@ -259,24 +267,29 @@ private fun PromptCard(item: PromptDto, favorite: Boolean, onFavorite: () -> Uni
         )
         IconButton(
             onClick = onFavorite,
-            modifier = Modifier.align(Alignment.TopEnd).padding(6.dp)
-                .background(Color(0x99000000), CircleShape),
+            modifier = Modifier.align(Alignment.TopEnd).padding(7.dp).size(36.dp)
+                .background(Color(0xB314151A), CircleShape),
         ) {
             Icon(
                 if (favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                 null,
+                modifier = Modifier.size(20.dp),
                 tint = if (favorite) Color(0xFFFF5B73) else Color.White,
             )
         }
         Button(
             onClick = { copyPrompt(context, item.promptText) },
-            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(8.dp),
-            shape = RoundedCornerShape(14.dp),
-            contentPadding = PaddingValues(vertical = 8.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xDD20222A)),
+            modifier = Modifier.align(Alignment.BottomCenter).padding(8.dp).height(38.dp),
+            shape = RoundedCornerShape(12.dp),
+            contentPadding = PaddingValues(horizontal = 13.dp, vertical = 0.dp),
+            border = BorderStroke(1.dp, Color(0x557C8CFF)),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xF0212330),
+                contentColor = Color(0xFFB8C0FF),
+            ),
         ) {
-            Icon(Icons.Default.ContentCopy, null)
-            Text(" کپی پرامپت", fontWeight = FontWeight.Bold)
+            Icon(Icons.Default.ContentCopy, null, modifier = Modifier.size(16.dp))
+            Text("  کپی پرامپت", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }
