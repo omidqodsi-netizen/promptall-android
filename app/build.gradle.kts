@@ -18,6 +18,11 @@ android {
         vectorDrawables.useSupportLibrary = true
     }
 
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
     val releaseStore = System.getenv("PROMPTALL_KEYSTORE")
     val releaseStorePassword = System.getenv("PROMPTALL_STORE_PASSWORD")
     val releaseKeyAlias = System.getenv("PROMPTALL_KEY_ALIAS")
@@ -51,6 +56,10 @@ android {
         buildConfig = true
     }
     packaging.resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+}
+
+kotlin {
+    jvmToolchain(17)
 }
 
 dependencies {
