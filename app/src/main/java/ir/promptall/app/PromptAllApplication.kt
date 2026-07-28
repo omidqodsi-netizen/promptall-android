@@ -2,6 +2,8 @@ package ir.promptall.app
 
 import android.app.Application
 import androidx.room.Room
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import ir.promptall.app.data.local.PromptAllDatabase
 import ir.promptall.app.data.remote.PromptApi
 import okhttp3.OkHttpClient
@@ -11,7 +13,9 @@ import retrofit2.converter.gson.GsonConverterFactory
 
 class PromptAllApplication : Application() {
     val database by lazy {
-        Room.databaseBuilder(this, PromptAllDatabase::class.java, "promptall.db").build()
+        Room.databaseBuilder(this, PromptAllDatabase::class.java, "promptall.db")
+            .addMigrations(MIGRATION_1_2)
+            .build()
     }
 
     val api: PromptApi by lazy {
@@ -27,5 +31,27 @@ class PromptAllApplication : Application() {
             .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(PromptApi::class.java)
+    }
+
+    companion object {
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `prompt_cache` (
+                        `id` INTEGER NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `promptText` TEXT NOT NULL,
+                        `imageUrl` TEXT NOT NULL,
+                        `imageWidth` INTEGER NOT NULL,
+                        `imageHeight` INTEGER NOT NULL,
+                        `position` INTEGER NOT NULL,
+                        `cachedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
     }
 }

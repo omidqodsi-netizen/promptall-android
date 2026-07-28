@@ -7,6 +7,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.RoomDatabase
+import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "favorites", primaryKeys = ["id"])
@@ -35,7 +36,42 @@ interface FavoriteDao {
     suspend fun contains(id: Long): Boolean
 }
 
-@Database(entities = [Favorite::class], version = 1, exportSchema = false)
+@Entity(tableName = "prompt_cache", primaryKeys = ["id"])
+data class CachedPrompt(
+    val id: Long,
+    val title: String,
+    val promptText: String,
+    val imageUrl: String,
+    val imageWidth: Int,
+    val imageHeight: Int,
+    val position: Int,
+    val cachedAt: Long = System.currentTimeMillis(),
+)
+
+@Dao
+interface PromptCacheDao {
+    @Query("SELECT * FROM prompt_cache ORDER BY position ASC")
+    suspend fun getAll(): List<CachedPrompt>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveAll(items: List<CachedPrompt>)
+
+    @Query("DELETE FROM prompt_cache")
+    suspend fun clear()
+
+    @Transaction
+    suspend fun replaceAll(items: List<CachedPrompt>) {
+        clear()
+        saveAll(items)
+    }
+}
+
+@Database(
+    entities = [Favorite::class, CachedPrompt::class],
+    version = 2,
+    exportSchema = false,
+)
 abstract class PromptAllDatabase : RoomDatabase() {
     abstract fun favorites(): FavoriteDao
+    abstract fun promptCache(): PromptCacheDao
 }
