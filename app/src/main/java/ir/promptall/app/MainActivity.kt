@@ -34,7 +34,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
@@ -315,9 +314,15 @@ private fun FeedContent(
         }
 
         when {
-            loading -> PromptSkeletonGrid()
+            loading -> PromptSkeletonGrid(
+                modifier = Modifier.fillMaxWidth().weight(1f)
+            )
 
-            error != null && items.isEmpty() -> ErrorState(error, onRetry)
+            error != null && items.isEmpty() -> ErrorState(
+                message = error,
+                retry = onRetry,
+                modifier = Modifier.fillMaxWidth().weight(1f),
+            )
 
             items.isEmpty() -> Box(
                 Modifier.fillMaxWidth().weight(1f).padding(bottom = 90.dp),
@@ -363,7 +368,7 @@ private fun NewPromptsBanner(count: Int, onClick: () -> Unit) {
     val countLabel = if (count >= 20) "۲۰+" else count.toPersianDigits()
     Surface(
         onClick = onClick,
-        modifier = Modifier.align(Alignment.CenterHorizontally)
+        modifier = Modifier.fillMaxWidth()
             .padding(start = 14.dp, end = 14.dp, bottom = 10.dp),
         shape = RoundedCornerShape(50),
         color = Color(0xFF262A3B),
@@ -371,9 +376,13 @@ private fun NewPromptsBanner(count: Int, onClick: () -> Unit) {
         border = BorderStroke(1.dp, Color(0x557F8CFF)),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 13.dp, vertical = 7.dp),
+            modifier = Modifier.fillMaxWidth()
+                .padding(horizontal = 13.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(
+                space = 6.dp,
+                alignment = Alignment.CenterHorizontally,
+            ),
         ) {
             Icon(Icons.Default.Refresh, null, Modifier.size(15.dp))
             Text(
@@ -486,13 +495,13 @@ private fun PromptCard(
 }
 
 @Composable
-private fun PromptSkeletonGrid() {
+private fun PromptSkeletonGrid(modifier: Modifier = Modifier) {
     val ratios = remember {
         listOf(0.72f, 0.92f, 0.62f, 1.18f, 0.84f, 0.7f, 1.05f, 0.78f)
     }
     LazyVerticalStaggeredGrid(
         columns = StaggeredGridCells.Fixed(2),
-        modifier = Modifier.fillMaxWidth().weight(1f),
+        modifier = modifier,
         contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 104.dp),
         horizontalArrangement = Arrangement.spacedBy(7.dp),
         verticalItemSpacing = 7.dp,
@@ -591,9 +600,13 @@ private fun FloatingBottomBar(
 }
 
 @Composable
-private fun ErrorState(message: String, retry: () -> Unit) {
+private fun ErrorState(
+    message: String,
+    retry: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Column(
-        Modifier.fillMaxWidth().weight(1f).padding(start = 32.dp, end = 32.dp, bottom = 90.dp),
+        modifier.padding(start = 32.dp, end = 32.dp, bottom = 90.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
