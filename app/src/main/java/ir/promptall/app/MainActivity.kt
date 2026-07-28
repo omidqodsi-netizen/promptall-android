@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
@@ -150,7 +151,7 @@ private fun PromptAllApp(vm: PromptViewModel) {
     ) {
         when (selected) {
             0 -> Feed(
-                title = "جدیدترین پرامپت‌ها",
+                title = "آخرین پرامپت‌ها",
                 items = state.home.items,
                 favoriteIds = state.favoriteIds,
                 loading = state.home.loading,
@@ -303,10 +304,12 @@ private fun FeedContent(
         Text(
             text = title,
             modifier = Modifier.fillMaxWidth()
-                .padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 10.dp),
+                .padding(start = 14.dp, end = 14.dp, top = 7.dp, bottom = 9.dp),
             textAlign = TextAlign.Right,
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
+            color = Color(0xFFF4F5FA),
+            fontSize = 18.sp,
+            lineHeight = 25.sp,
+            fontWeight = FontWeight.SemiBold,
         )
 
         if (newPromptCount > 0) {
@@ -485,7 +488,7 @@ private fun PromptCard(
                 tint = Color(0xFFBCC4FF),
             )
             Text(
-                text = if (copied) "کپی شد" else "کپی",
+                text = if (copied) "کپی شد" else "کپی پرامپت",
                 color = Color(0xFFCDD2FF),
                 fontSize = 10.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -550,9 +553,10 @@ private fun FloatingBottomBar(
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        modifier = modifier.fillMaxWidth()
+        modifier = modifier.fillMaxWidth(0.88f)
+            .widthIn(max = 390.dp)
             .navigationBarsPadding()
-            .padding(start = 12.dp, end = 12.dp, bottom = 7.dp)
+            .padding(bottom = 7.dp)
             .shadow(16.dp, RoundedCornerShape(21.dp)),
         shape = RoundedCornerShape(21.dp),
         color = Color(0xE8181A22),
@@ -636,6 +640,7 @@ private fun AboutScreen() {
             "promptAll",
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
+            color = Color(0xFFF4F5FA),
         )
         Text("منبع پرامپت‌های آماده", color = Color(0xFF9A9DA8))
         Spacer(Modifier.height(42.dp))
@@ -663,7 +668,11 @@ private fun InfoRow(label: String, value: String) {
         Modifier.fillMaxWidth().padding(vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text(value, fontWeight = FontWeight.SemiBold)
+        Text(
+            value,
+            color = Color(0xFFF0F1F6),
+            fontWeight = FontWeight.SemiBold,
+        )
         Text(label, color = Color(0xFF9A9DA8))
     }
 }
