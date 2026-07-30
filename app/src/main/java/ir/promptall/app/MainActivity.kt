@@ -39,13 +39,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Favorite
@@ -96,6 +96,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import ir.promptall.app.data.local.Favorite
+import ir.promptall.app.data.remote.PromptCategory
 import ir.promptall.app.data.remote.PromptDto
 import ir.promptall.app.data.remote.PromptImage
 import ir.promptall.app.ui.PromptViewModel
@@ -191,6 +192,10 @@ private fun PromptAllApp(vm: PromptViewModel) {
                 onSearchClick = { selected = 1 },
                 newPromptCount = state.newPromptCount,
                 onShowNewPrompts = vm::showNewPrompts,
+                categories = state.categories,
+                categoriesLoading = state.categoriesLoading,
+                selectedCategory = state.selectedCategory,
+                onCategorySelected = vm::selectCategory,
             )
 
             1 -> SearchScreen(
@@ -267,6 +272,10 @@ private fun FeedScreen(
     emptyText: String = "پرامپتی برای نمایش وجود ندارد.",
     newPromptCount: Int = 0,
     onShowNewPrompts: () -> Unit = {},
+    categories: List<PromptCategory> = emptyList(),
+    categoriesLoading: Boolean = false,
+    selectedCategory: String? = null,
+    onCategorySelected: (String?) -> Unit = {},
 ) {
     val content: @Composable () -> Unit = {
         FeedContent(
@@ -285,6 +294,10 @@ private fun FeedScreen(
             emptyText = emptyText,
             newPromptCount = newPromptCount,
             onShowNewPrompts = onShowNewPrompts,
+            categories = categories,
+            categoriesLoading = categoriesLoading,
+            selectedCategory = selectedCategory,
+            onCategorySelected = onCategorySelected,
         )
     }
     if (onRefresh != null) {
@@ -315,9 +328,21 @@ private fun FeedContent(
     emptyText: String,
     newPromptCount: Int,
     onShowNewPrompts: () -> Unit,
+    categories: List<PromptCategory>,
+    categoriesLoading: Boolean,
+    selectedCategory: String?,
+    onCategorySelected: (String?) -> Unit,
 ) {
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         AppHeader(title, subtitle, onSearchClick)
+        if (onSearchClick != null) {
+            CategoryBar(
+                categories = categories,
+                loading = categoriesLoading,
+                selectedCategory = selectedCategory,
+                onSelected = onCategorySelected,
+            )
+        }
         if (newPromptCount > 0) {
             NewPromptsBanner(newPromptCount, onShowNewPrompts)
         }
@@ -357,6 +382,71 @@ private fun FeedContent(
                 if (loadingMore) item { PromptSkeletonCard() }
             }
         }
+    }
+}
+
+@Composable
+private fun CategoryBar(
+    categories: List<PromptCategory>,
+    loading: Boolean,
+    selectedCategory: String?,
+    onSelected: (String?) -> Unit,
+) {
+    LazyRow(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+        contentPadding = PaddingValues(horizontal = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        reverseLayout = true,
+    ) {
+        item(key = "all") {
+            CategoryChip(
+                text = "همه",
+                selected = selectedCategory == null,
+                onClick = { onSelected(null) },
+            )
+        }
+        items(categories, key = { it.id }) { category ->
+            CategoryChip(
+                text = category.name,
+                selected = selectedCategory == category.slug,
+                onClick = { onSelected(category.slug) },
+            )
+        }
+        if (loading && categories.isEmpty()) {
+            items(3) {
+                Box(
+                    Modifier.width(86.dp).height(39.dp)
+                        .clip(RoundedCornerShape(17.dp))
+                        .background(Color(0xFF17191D))
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CategoryChip(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(17.dp),
+        color = if (selected) Color(0xFF24172F) else Color(0xFF111317),
+        contentColor = if (selected) PurpleSoft else Color(0xFFB0B1B7),
+        border = BorderStroke(
+            1.dp,
+            if (selected) Color(0xFF9B54E8) else Color(0xFF303238),
+        ),
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 17.dp, vertical = 10.dp),
+            fontSize = 12.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            maxLines = 1,
+        )
     }
 }
 
@@ -713,7 +803,7 @@ private fun FloatingBottomBar(
                 ),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Default.Add, "تازه‌سازی پرامپت‌ها", Modifier.size(35.dp))
+                Icon(Icons.Default.Refresh, "تازه‌سازی پرامپت‌ها", Modifier.size(31.dp))
             }
         }
     }

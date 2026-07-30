@@ -24,11 +24,26 @@ data class PromptPage(
     @SerializedName("has_more") val hasMore: Boolean,
 )
 
+data class PromptCategory(
+    val id: Long,
+    val name: String,
+    val slug: String,
+    val count: Int,
+)
+
+data class PromptCategories(
+    val items: List<PromptCategory>,
+)
+
 interface PromptApi {
     @GET("wp-json/promptall/v1/prompts")
     suspend fun prompts(
         @Query("page") page: Int,
         @Query("per_page") perPage: Int = 20,
         @Query("search") search: String? = null,
+        @Query("category") category: String? = null,
     ): PromptPage
+
+    @GET("wp-json/promptall/v1/categories")
+    suspend fun categories(): PromptCategories
 }

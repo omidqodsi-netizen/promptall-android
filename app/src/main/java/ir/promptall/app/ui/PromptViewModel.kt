@@ -8,6 +8,7 @@ import ir.promptall.app.PromptAllApplication
 import ir.promptall.app.data.local.CachedPrompt
 import ir.promptall.app.data.local.Favorite
 import ir.promptall.app.data.remote.PromptDto
+import ir.promptall.app.data.remote.PromptCategory
 import ir.promptall.app.data.remote.PromptImage
 import ir.promptall.app.data.remote.PromptPage
 import kotlinx.coroutines.Job
@@ -32,6 +33,9 @@ data class PromptUiState(
     val query: String = "",
     val favoriteIds: Set<Long> = emptySet(),
     val newPromptCount: Int = 0,
+    val categories: List<PromptCategory> = emptyList(),
+    val categoriesLoading: Boolean = false,
+    val selectedCategory: String? = null,
 )
 
 class PromptViewModel(application: Application) : AndroidViewModel(application) {
@@ -60,11 +64,38 @@ class PromptViewModel(application: Application) : AndroidViewModel(application) 
                 state.value = state.value.copy(favoriteIds = saved.map { it.id }.toSet())
             }
         }
+        loadCategories()
         loadCachedHome()
+    }
+
+    private fun loadCategories() = viewModelScope.launch {
+        state.value = state.value.copy(categoriesLoading = true)
+        runCatching { app.api.categories() }
+            .onSuccess { response ->
+                state.value = state.value.copy(
+                    categories = response.items,
+                    categoriesLoading = false,
+                )
+            }
+            .onFailure {
+                state.value = state.value.copy(categoriesLoading = false)
+            }
+    }
+
+    fun selectCategory(slug: String?) {
+        if (state.value.selectedCategory == slug) return
+        pendingFirstPage = null
+        state.value = state.value.copy(
+            selectedCategory = slug,
+            newPromptCount = 0,
+            home = FeedState(),
+        )
+        loadHome(reset = true, userInitiated = false)
     }
 
     private fun loadCachedHome() = viewModelScope.launch {
         val cached = cacheDao.getAll().map { it.toPrompt() }
+        if (state.value.selectedCategory != null) return@launch
         if (cached.isEmpty()) {
             loadHome(reset = true, userInitiated = false)
         } else {
@@ -108,8 +139,10 @@ class PromptViewModel(application: Application) : AndroidViewModel(application) 
                 )
             )
 
-            runCatching { app.api.prompts(nextPage) }
+            val categoryAtRequest = state.value.selectedCategory
+            runCatching { app.api.prompts(nextPage, category = categoryAtRequest) }
                 .onSuccess { page ->
+                    if (state.value.selectedCategory != categoryAtRequest) return@onSuccess
                     val current = state.value.home
                     val merged = if (reset) {
                         page.items
@@ -127,7 +160,7 @@ class PromptViewModel(application: Application) : AndroidViewModel(application) 
                             error = null,
                         )
                     )
-                    cacheHomeItems(merged)
+                    if (categoryAtRequest == null) cacheHomeItems(merged)
                 }
                 .onFailure {
                     val current = state.value.home
@@ -154,15 +187,17 @@ class PromptViewModel(application: Application) : AndroidViewModel(application) 
         lastNewPromptCheck = now
 
         viewModelScope.launch {
-            runCatching { app.api.prompts(page = 1) }
+            val categoryAtRequest = state.value.selectedCategory
+            runCatching { app.api.prompts(page = 1, category = categoryAtRequest) }
                 .onSuccess { page ->
+                    if (state.value.selectedCategory != categoryAtRequest) return@onSuccess
                     val visibleIds = state.value.home.items.mapTo(hashSetOf(), PromptDto::id)
                     val newItems = page.items.takeWhile { it.id !in visibleIds }
                     if (newItems.isNotEmpty()) {
                         pendingFirstPage = page
                         state.value = state.value.copy(newPromptCount = newItems.size)
                     } else if (state.value.home.page == 1) {
-                        cacheHomeItems(state.value.home.items)
+                        if (categoryAtRequest == null) cacheHomeItems(state.value.home.items)
                     }
                 }
         }
@@ -181,7 +216,7 @@ class PromptViewModel(application: Application) : AndroidViewModel(application) 
             ),
             newPromptCount = 0,
         )
-        cacheHomeItems(merged)
+        if (state.value.selectedCategory == null) cacheHomeItems(merged)
     }
 
     fun setQuery(value: String) {
