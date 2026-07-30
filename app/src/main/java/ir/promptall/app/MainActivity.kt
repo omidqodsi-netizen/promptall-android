@@ -21,6 +21,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -43,6 +44,11 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
+import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
+import androidx.compose.foundation.lazy.staggeredgrid.items as staggeredItems
+import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -56,6 +62,8 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ViewAgenda
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -83,7 +91,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -135,6 +145,13 @@ private data class Tab(
 @Composable
 private fun PromptAllApp(vm: PromptViewModel) {
     var selected by rememberSaveable { mutableIntStateOf(0) }
+    val context = LocalContext.current
+    val displayPreferences = remember {
+        context.getSharedPreferences("promptall_display", Context.MODE_PRIVATE)
+    }
+    var galleryMode by rememberSaveable {
+        mutableStateOf(displayPreferences.getBoolean("home_gallery_mode", false))
+    }
     val state by vm.state
     val saved by vm.favorites.collectAsStateWithLifecycle()
     val homeListState = rememberLazyListState()
@@ -196,6 +213,13 @@ private fun PromptAllApp(vm: PromptViewModel) {
                 categoriesLoading = state.categoriesLoading,
                 selectedCategory = state.selectedCategory,
                 onCategorySelected = vm::selectCategory,
+                galleryMode = galleryMode,
+                onGalleryModeToggle = {
+                    galleryMode = !galleryMode
+                    displayPreferences.edit()
+                        .putBoolean("home_gallery_mode", galleryMode)
+                        .apply()
+                },
             )
 
             1 -> SearchScreen(
@@ -276,6 +300,8 @@ private fun FeedScreen(
     categoriesLoading: Boolean = false,
     selectedCategory: String? = null,
     onCategorySelected: (String?) -> Unit = {},
+    galleryMode: Boolean = false,
+    onGalleryModeToggle: (() -> Unit)? = null,
 ) {
     val content: @Composable () -> Unit = {
         FeedContent(
@@ -298,6 +324,8 @@ private fun FeedScreen(
             categoriesLoading = categoriesLoading,
             selectedCategory = selectedCategory,
             onCategorySelected = onCategorySelected,
+            galleryMode = galleryMode,
+            onGalleryModeToggle = onGalleryModeToggle,
         )
     }
     if (onRefresh != null) {
@@ -332,9 +360,17 @@ private fun FeedContent(
     categoriesLoading: Boolean,
     selectedCategory: String?,
     onCategorySelected: (String?) -> Unit,
+    galleryMode: Boolean,
+    onGalleryModeToggle: (() -> Unit)?,
 ) {
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        AppHeader(title, subtitle, onSearchClick)
+        AppHeader(
+            title = title,
+            subtitle = subtitle,
+            onSearchClick = onSearchClick,
+            galleryMode = galleryMode,
+            onGalleryModeToggle = onGalleryModeToggle,
+        )
         if (onSearchClick != null) {
             CategoryBar(
                 categories = categories,
@@ -358,28 +394,67 @@ private fun FeedContent(
             ) {
                 Text(emptyText, color = MutedText, fontSize = 13.sp)
             }
-            else -> LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                contentPadding = PaddingValues(
-                    start = 14.dp,
-                    end = 14.dp,
-                    top = 4.dp,
-                    bottom = 118.dp,
-                ),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                itemsIndexed(items, key = { _, item -> item.id }) { index, item ->
-                    PromptCard(
-                        item = item,
-                        favorite = item.id in favoriteIds,
-                        onFavorite = { onFavorite(item) },
-                    )
-                    if (index == (items.lastIndex - 3).coerceAtLeast(0)) {
-                        LaunchedEffect(items.size) { onLoadMore() }
+            else -> {
+                if (galleryMode && onGalleryModeToggle != null) {
+                    val galleryState = rememberLazyStaggeredGridState()
+                    LazyVerticalStaggeredGrid(
+                        columns = StaggeredGridCells.Fixed(2),
+                        state = galleryState,
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        contentPadding = PaddingValues(
+                            start = 10.dp,
+                            end = 10.dp,
+                            top = 2.dp,
+                            bottom = 118.dp,
+                        ),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalItemSpacing = 8.dp,
+                    ) {
+                        staggeredItems(
+                            items = items,
+                            key = { it.id },
+                        ) { item ->
+                            val index = items.indexOf(item)
+                            GalleryPromptCard(
+                                item = item,
+                                favorite = item.id in favoriteIds,
+                                onFavorite = { onFavorite(item) },
+                            )
+                            if (index == (items.lastIndex - 5).coerceAtLeast(0)) {
+                                LaunchedEffect(items.size) { onLoadMore() }
+                            }
+                        }
+                        if (loadingMore) {
+                            item(span = StaggeredGridItemSpan.FullLine) {
+                                PromptSkeletonCard()
+                            }
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        contentPadding = PaddingValues(
+                            start = 14.dp,
+                            end = 14.dp,
+                            top = 4.dp,
+                            bottom = 118.dp,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        itemsIndexed(items, key = { _, item -> item.id }) { index, item ->
+                            PromptCard(
+                                item = item,
+                                favorite = item.id in favoriteIds,
+                                onFavorite = { onFavorite(item) },
+                            )
+                            if (index == (items.lastIndex - 3).coerceAtLeast(0)) {
+                                LaunchedEffect(items.size) { onLoadMore() }
+                            }
+                        }
+                        if (loadingMore) item { PromptSkeletonCard() }
                     }
                 }
-                if (loadingMore) item { PromptSkeletonCard() }
             }
         }
     }
@@ -455,25 +530,31 @@ private fun AppHeader(
     title: String,
     subtitle: String,
     onSearchClick: (() -> Unit)?,
+    galleryMode: Boolean = false,
+    onGalleryModeToggle: (() -> Unit)? = null,
 ) {
     Row(
         Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 15.dp, bottom = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (onSearchClick != null) {
-            Surface(
+            HeaderCircleButton(
                 onClick = onSearchClick,
-                modifier = Modifier.size(52.dp),
-                shape = CircleShape,
-                color = Color(0xFF17191D),
-                border = BorderStroke(1.dp, Color(0xFF24262B)),
+                contentDescription = "جست‌وجو",
             ) {
-                Box(contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.Search, null, Modifier.size(25.dp), tint = Color.White)
+            }
+            if (onGalleryModeToggle != null) {
+                Spacer(Modifier.width(9.dp))
+                HeaderCircleButton(
+                    onClick = onGalleryModeToggle,
+                    contentDescription = if (galleryMode) "نمای کارت‌ها" else "نمای گالری",
+                ) {
                     Icon(
-                        Icons.Default.Search,
-                        contentDescription = "جست‌وجو",
-                        modifier = Modifier.size(26.dp),
-                        tint = Color.White,
+                        if (galleryMode) Icons.Default.ViewAgenda else Icons.Default.GridView,
+                        null,
+                        Modifier.size(24.dp),
+                        tint = if (galleryMode) PurpleSoft else Color.White,
                     )
                 }
             }
@@ -496,6 +577,35 @@ private fun AppHeader(
                 lineHeight = 18.sp,
                 textAlign = TextAlign.Right,
             )
+        }
+    }
+}
+
+@Composable
+private fun HeaderCircleButton(
+    onClick: () -> Unit,
+    contentDescription: String,
+    content: @Composable () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.size(52.dp),
+        shape = CircleShape,
+        color = Color(0xFF17191D),
+        border = BorderStroke(1.dp, Color(0xFF24262B)),
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier.semantics {
+                    this.contentDescription = contentDescription
+                },
+                contentAlignment = Alignment.Center,
+            ) {
+                content()
+            }
         }
     }
 }
@@ -691,6 +801,103 @@ private fun PromptCard(
                             fontWeight = FontWeight.Bold,
                         )
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GalleryPromptCard(
+    item: PromptDto,
+    favorite: Boolean,
+    onFavorite: () -> Unit,
+) {
+    val context = LocalContext.current
+    var copied by remember(item.id) { mutableStateOf(false) }
+    val imageRatio = remember(item.image.width, item.image.height) {
+        if (item.image.width > 0 && item.image.height > 0) {
+            (item.image.width.toFloat() / item.image.height.toFloat()).coerceIn(0.52f, 1.7f)
+        } else {
+            0.78f
+        }
+    }
+
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(1_250)
+            copied = false
+        }
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth().aspectRatio(imageRatio),
+        shape = RoundedCornerShape(19.dp),
+        color = Color(0xFF111216),
+        border = BorderStroke(1.dp, CardBorder),
+    ) {
+        Box(Modifier.fillMaxSize()) {
+            AsyncImage(
+                model = item.image.url,
+                contentDescription = item.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+            Box(
+                Modifier.fillMaxWidth().height(78.dp).align(Alignment.BottomCenter).background(
+                    Brush.verticalGradient(
+                        listOf(Color.Transparent, Color(0xC9000000))
+                    )
+                )
+            )
+            Box(
+                Modifier.align(Alignment.TopStart).padding(8.dp).size(34.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xA81A1B1F))
+                    .clickable(
+                        role = Role.Button,
+                        onClickLabel = if (favorite) {
+                            "حذف از علاقه‌مندی"
+                        } else {
+                            "افزودن به علاقه‌مندی"
+                        },
+                        onClick = onFavorite,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    if (favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    null,
+                    Modifier.size(19.dp),
+                    tint = if (favorite) Color(0xFFFF5872) else Color.White,
+                )
+            }
+            Surface(
+                onClick = {
+                    copyPrompt(context, item.promptText)
+                    copied = true
+                },
+                modifier = Modifier.align(Alignment.BottomCenter).padding(9.dp),
+                shape = RoundedCornerShape(50),
+                color = Color(0xD91A1428),
+                contentColor = PurpleSoft,
+                border = BorderStroke(1.dp, Color(0xFF563878)),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(
+                        if (copied) Icons.Default.Check else Icons.Default.ContentCopy,
+                        null,
+                        Modifier.size(15.dp),
+                    )
+                    Text(
+                        if (copied) "کپی شد" else "کپی پرامپت",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
                 }
             }
         }

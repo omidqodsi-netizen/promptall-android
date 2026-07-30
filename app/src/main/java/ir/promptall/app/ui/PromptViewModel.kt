@@ -83,10 +83,14 @@ class PromptViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun selectCategory(slug: String?) {
-        if (state.value.selectedCategory == slug) return
+        val normalizedSlug = slug?.trim()?.takeIf { it.isNotEmpty() && it != "all" }
+        if (state.value.selectedCategory == normalizedSlug) {
+            refreshHome()
+            return
+        }
         pendingFirstPage = null
         state.value = state.value.copy(
-            selectedCategory = slug,
+            selectedCategory = normalizedSlug,
             newPromptCount = 0,
             home = FeedState(),
         )
@@ -108,7 +112,7 @@ class PromptViewModel(application: Application) : AndroidViewModel(application) 
                     hasMore = true,
                 )
             )
-            checkForNewPrompts(force = true)
+            loadHome(reset = true, userInitiated = false)
         }
     }
 
