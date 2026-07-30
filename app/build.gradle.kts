@@ -13,8 +13,8 @@ android {
         applicationId = "ir.promptall.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 30101
-        versionName = "3.1.1"
+        versionCode = 30200
+        versionName = "3.2.0"
         vectorDrawables.useSupportLibrary = true
     }
 

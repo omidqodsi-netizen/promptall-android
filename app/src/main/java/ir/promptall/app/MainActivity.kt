@@ -25,8 +25,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -34,21 +35,24 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
-import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
-import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
-import androidx.compose.foundation.lazy.staggeredgrid.itemsIndexed
-import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -57,6 +61,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -81,12 +86,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import ir.promptall.app.data.local.Favorite
@@ -95,6 +101,11 @@ import ir.promptall.app.data.remote.PromptImage
 import ir.promptall.app.ui.PromptViewModel
 import ir.promptall.app.ui.theme.PromptAllTheme
 import kotlinx.coroutines.delay
+
+private val Purple = Color(0xFFA85CFF)
+private val PurpleSoft = Color(0xFFC084FF)
+private val MutedText = Color(0xFF98999F)
+private val CardBorder = Color(0xFF282A30)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -109,8 +120,7 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             PromptAllTheme {
-                val vm: PromptViewModel = viewModel()
-                PromptAllApp(vm)
+                PromptAllApp(viewModel())
             }
         }
     }
@@ -118,7 +128,7 @@ class MainActivity : ComponentActivity() {
 
 private data class Tab(
     val title: String,
-    val icon: @Composable (Modifier) -> Unit,
+    val icon: @Composable (Modifier, Color) -> Unit,
 )
 
 @Composable
@@ -126,9 +136,9 @@ private fun PromptAllApp(vm: PromptViewModel) {
     var selected by rememberSaveable { mutableIntStateOf(0) }
     val state by vm.state
     val saved by vm.favorites.collectAsStateWithLifecycle()
-    val homeGridState = rememberLazyStaggeredGridState()
-    val searchGridState = rememberLazyStaggeredGridState()
-    val favoriteGridState = rememberLazyStaggeredGridState()
+    val homeListState = rememberLazyListState()
+    val searchListState = rememberLazyListState()
+    val favoriteListState = rememberLazyListState()
     val lifecycleOwner = LocalLifecycleOwner.current
 
     DisposableEffect(lifecycleOwner) {
@@ -140,74 +150,73 @@ private fun PromptAllApp(vm: PromptViewModel) {
     }
 
     val tabs = listOf(
-        Tab("خانه") { Icon(Icons.Default.Home, null, it) },
-        Tab("جست‌وجو") { Icon(Icons.Default.Search, null, it) },
-        Tab("علاقه‌مندی") { Icon(Icons.Default.Favorite, null, it) },
-        Tab("تنظیمات") { Icon(Icons.Default.Settings, null, it) },
+        Tab("تنظیمات") { modifier, color ->
+            Icon(Icons.Default.Settings, null, modifier, tint = color)
+        },
+        Tab("علاقه‌مندی‌ها") { modifier, color ->
+            Icon(Icons.Default.FavoriteBorder, null, modifier, tint = color)
+        },
+        Tab("جست‌وجو") { modifier, color ->
+            Icon(Icons.Default.Search, null, modifier, tint = color)
+        },
+        Tab("خانه") { modifier, color ->
+            Icon(Icons.Default.Home, null, modifier, tint = color)
+        },
     )
 
     Box(
-        Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+        Modifier.fillMaxSize().background(
+            Brush.radialGradient(
+                colors = listOf(Color(0xFF111118), Color(0xFF050608)),
+                center = Offset(950f, 80f),
+                radius = 1_350f,
+            )
+        )
     ) {
         when (selected) {
-            0 -> Feed(
-                title = "آخرین پرامپت‌ها",
+            0 -> FeedScreen(
+                title = "پرامپت‌های آماده",
+                subtitle = "برای ساخت تصاویر با هوش مصنوعی",
                 items = state.home.items,
                 favoriteIds = state.favoriteIds,
                 loading = state.home.loading,
                 refreshing = state.home.refreshing,
                 loadingMore = state.home.loadingMore,
                 error = state.home.error,
-                gridState = homeGridState,
+                listState = homeListState,
                 onRetry = vm::refreshHome,
                 onRefresh = vm::refreshHome,
                 onLoadMore = vm::loadMoreHome,
                 onFavorite = vm::toggleFavorite,
+                onSearchClick = { selected = 1 },
                 newPromptCount = state.newPromptCount,
                 onShowNewPrompts = vm::showNewPrompts,
             )
 
-            1 -> Column(Modifier.fillMaxSize()) {
-                OutlinedTextField(
-                    value = state.query,
-                    onValueChange = vm::setQuery,
-                    modifier = Modifier.fillMaxWidth().statusBarsPadding()
-                        .padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 4.dp),
-                    placeholder = { Text("جست‌وجو در عنوان و متن پرامپت") },
-                    leadingIcon = { Icon(Icons.Default.Search, null) },
-                    singleLine = true,
-                    shape = RoundedCornerShape(18.dp),
-                )
-                Feed(
-                    title = if (state.query.isBlank()) {
-                        "پرامپت موردنظر را پیدا کنید"
-                    } else {
-                        "نتایج جست‌وجو"
-                    },
-                    items = state.search.items,
-                    favoriteIds = state.favoriteIds,
-                    loading = state.search.loading,
-                    refreshing = false,
-                    loadingMore = state.search.loadingMore,
-                    error = state.search.error,
-                    gridState = searchGridState,
-                    onRetry = vm::retrySearch,
-                    onRefresh = null,
-                    onLoadMore = vm::loadMoreSearch,
-                    onFavorite = vm::toggleFavorite,
-                    showTopPadding = false,
-                )
-            }
+            1 -> SearchScreen(
+                query = state.query,
+                onQueryChange = vm::setQuery,
+                items = state.search.items,
+                favoriteIds = state.favoriteIds,
+                loading = state.search.loading,
+                loadingMore = state.search.loadingMore,
+                error = state.search.error,
+                listState = searchListState,
+                onRetry = vm::retrySearch,
+                onLoadMore = vm::loadMoreSearch,
+                onFavorite = vm::toggleFavorite,
+            )
 
-            2 -> Feed(
+            2 -> FeedScreen(
                 title = "علاقه‌مندی‌ها",
+                subtitle = "پرامپت‌هایی که برای بعد ذخیره کرده‌اید",
                 items = saved.map(Favorite::toPrompt),
                 favoriteIds = saved.map { it.id }.toSet(),
                 loading = false,
                 refreshing = false,
                 loadingMore = false,
                 error = null,
-                gridState = favoriteGridState,
+                listState = favoriteListState,
                 onRetry = {},
                 onRefresh = null,
                 onLoadMore = {},
@@ -221,7 +230,18 @@ private fun PromptAllApp(vm: PromptViewModel) {
         FloatingBottomBar(
             tabs = tabs,
             selected = selected,
-            onSelected = { selected = it },
+            onSelected = { index ->
+                selected = when (index) {
+                    0 -> 3
+                    1 -> 2
+                    2 -> 1
+                    else -> 0
+                }
+            },
+            onCenterClick = {
+                selected = 0
+                vm.refreshHome()
+            },
             modifier = Modifier.align(Alignment.BottomCenter),
         )
     }
@@ -229,51 +249,50 @@ private fun PromptAllApp(vm: PromptViewModel) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun Feed(
+private fun FeedScreen(
     title: String,
+    subtitle: String,
     items: List<PromptDto>,
     favoriteIds: Set<Long>,
     loading: Boolean,
     refreshing: Boolean,
     loadingMore: Boolean,
     error: String?,
-    gridState: LazyStaggeredGridState,
+    listState: LazyListState,
     onRetry: () -> Unit,
     onRefresh: (() -> Unit)?,
     onLoadMore: () -> Unit,
     onFavorite: (PromptDto) -> Unit,
+    onSearchClick: (() -> Unit)? = null,
     emptyText: String = "پرامپتی برای نمایش وجود ندارد.",
-    showTopPadding: Boolean = true,
     newPromptCount: Int = 0,
     onShowNewPrompts: () -> Unit = {},
 ) {
     val content: @Composable () -> Unit = {
         FeedContent(
             title = title,
+            subtitle = subtitle,
             items = items,
             favoriteIds = favoriteIds,
             loading = loading,
             loadingMore = loadingMore,
             error = error,
-            gridState = gridState,
+            listState = listState,
             onRetry = onRetry,
             onLoadMore = onLoadMore,
             onFavorite = onFavorite,
+            onSearchClick = onSearchClick,
             emptyText = emptyText,
-            showTopPadding = showTopPadding,
             newPromptCount = newPromptCount,
             onShowNewPrompts = onShowNewPrompts,
         )
     }
-
     if (onRefresh != null) {
         PullToRefreshBox(
             isRefreshing = refreshing,
             onRefresh = onRefresh,
             modifier = Modifier.fillMaxSize(),
-        ) {
-            content()
-        }
+        ) { content() }
     } else {
         content()
     }
@@ -282,69 +301,48 @@ private fun Feed(
 @Composable
 private fun FeedContent(
     title: String,
+    subtitle: String,
     items: List<PromptDto>,
     favoriteIds: Set<Long>,
     loading: Boolean,
     loadingMore: Boolean,
     error: String?,
-    gridState: LazyStaggeredGridState,
+    listState: LazyListState,
     onRetry: () -> Unit,
     onLoadMore: () -> Unit,
     onFavorite: (PromptDto) -> Unit,
+    onSearchClick: (() -> Unit)?,
     emptyText: String,
-    showTopPadding: Boolean,
     newPromptCount: Int,
     onShowNewPrompts: () -> Unit,
 ) {
-    Column(
-        Modifier.fillMaxSize().then(
-            if (showTopPadding) Modifier.statusBarsPadding() else Modifier
-        )
-    ) {
-        Text(
-            text = title,
-            modifier = Modifier.fillMaxWidth()
-                .padding(start = 14.dp, end = 14.dp, top = 7.dp, bottom = 9.dp),
-            textAlign = TextAlign.Right,
-            color = Color(0xFFF4F5FA),
-            fontSize = 18.sp,
-            lineHeight = 25.sp,
-            fontWeight = FontWeight.SemiBold,
-        )
-
+    Column(Modifier.fillMaxSize().statusBarsPadding()) {
+        AppHeader(title, subtitle, onSearchClick)
         if (newPromptCount > 0) {
             NewPromptsBanner(newPromptCount, onShowNewPrompts)
         }
 
         when {
-            loading -> PromptSkeletonGrid(
-                modifier = Modifier.fillMaxWidth().weight(1f)
-            )
-
+            loading -> PromptSkeletonList(Modifier.weight(1f))
             error != null && items.isEmpty() -> ErrorState(
-                message = error,
-                retry = onRetry,
-                modifier = Modifier.fillMaxWidth().weight(1f),
+                error, onRetry, Modifier.fillMaxWidth().weight(1f)
             )
-
             items.isEmpty() -> Box(
-                Modifier.fillMaxWidth().weight(1f).padding(bottom = 90.dp),
+                Modifier.fillMaxWidth().weight(1f).padding(bottom = 110.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(emptyText, color = Color(0xFF9A9DA8))
+                Text(emptyText, color = MutedText, fontSize = 13.sp)
             }
-
-            else -> LazyVerticalStaggeredGrid(
-                columns = StaggeredGridCells.Fixed(2),
+            else -> LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxWidth().weight(1f),
-                state = gridState,
                 contentPadding = PaddingValues(
-                    start = 8.dp,
-                    end = 8.dp,
-                    bottom = 104.dp,
+                    start = 14.dp,
+                    end = 14.dp,
+                    top = 4.dp,
+                    bottom = 118.dp,
                 ),
-                horizontalArrangement = Arrangement.spacedBy(7.dp),
-                verticalItemSpacing = 7.dp,
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 itemsIndexed(items, key = { _, item -> item.id }) { index, item ->
                     PromptCard(
@@ -356,43 +354,125 @@ private fun FeedContent(
                         LaunchedEffect(items.size) { onLoadMore() }
                     }
                 }
-                if (loadingMore) {
-                    item {
-                        PromptSkeletonCard(ratio = 0.9f)
-                    }
-                }
+                if (loadingMore) item { PromptSkeletonCard() }
             }
         }
     }
 }
 
 @Composable
-private fun NewPromptsBanner(count: Int, onClick: () -> Unit) {
-    val countLabel = if (count >= 20) "۲۰+" else count.toPersianDigits()
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth()
-            .padding(start = 14.dp, end = 14.dp, bottom = 10.dp),
-        shape = RoundedCornerShape(50),
-        color = Color(0xFF262A3B),
-        contentColor = Color(0xFFC1C7FF),
-        border = BorderStroke(1.dp, Color(0x557F8CFF)),
+private fun AppHeader(
+    title: String,
+    subtitle: String,
+    onSearchClick: (() -> Unit)?,
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 15.dp, bottom = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth()
-                .padding(horizontal = 13.dp, vertical = 7.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(
-                space = 6.dp,
-                alignment = Alignment.CenterHorizontally,
-            ),
-        ) {
-            Icon(Icons.Default.Refresh, null, Modifier.size(15.dp))
+        if (onSearchClick != null) {
+            Surface(
+                onClick = onSearchClick,
+                modifier = Modifier.size(52.dp),
+                shape = CircleShape,
+                color = Color(0xFF17191D),
+                border = BorderStroke(1.dp, Color(0xFF24262B)),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Default.Search,
+                        contentDescription = "جست‌وجو",
+                        modifier = Modifier.size(26.dp),
+                        tint = Color.White,
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        Column(horizontalAlignment = Alignment.End) {
             Text(
-                "$countLabel پرامپت جدید؛ برای نمایش بزنید",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
+                title,
+                color = Color.White,
+                fontSize = 25.sp,
+                lineHeight = 32.sp,
+                fontWeight = FontWeight.ExtraBold,
+                textAlign = TextAlign.Right,
             )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                subtitle,
+                color = MutedText,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+                textAlign = TextAlign.Right,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SearchScreen(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    items: List<PromptDto>,
+    favoriteIds: Set<Long>,
+    loading: Boolean,
+    loadingMore: Boolean,
+    error: String?,
+    listState: LazyListState,
+    onRetry: () -> Unit,
+    onLoadMore: () -> Unit,
+    onFavorite: (PromptDto) -> Unit,
+) {
+    Column(Modifier.fillMaxSize().statusBarsPadding()) {
+        AppHeader("جست‌وجوی پرامپت", "عنوان یا متن دلخواهتان را بنویسید", null)
+        OutlinedTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
+            placeholder = { Text("مثلاً پرتره سینمایی...", color = Color(0xFF777980)) },
+            leadingIcon = { Icon(Icons.Default.Search, null, tint = PurpleSoft) },
+            singleLine = true,
+            shape = RoundedCornerShape(22.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = Purple,
+                unfocusedBorderColor = CardBorder,
+                focusedContainerColor = Color(0xFF101116),
+                unfocusedContainerColor = Color(0xFF101116),
+            ),
+        )
+
+        when {
+            query.isBlank() -> Box(
+                Modifier.fillMaxWidth().weight(1f).padding(bottom = 110.dp),
+                contentAlignment = Alignment.Center,
+            ) { Text("برای شروع جست‌وجو چیزی بنویسید", color = MutedText) }
+            loading -> PromptSkeletonList(Modifier.weight(1f))
+            error != null && items.isEmpty() -> ErrorState(
+                error, onRetry, Modifier.fillMaxWidth().weight(1f)
+            )
+            items.isEmpty() -> Box(
+                Modifier.fillMaxWidth().weight(1f).padding(bottom = 110.dp),
+                contentAlignment = Alignment.Center,
+            ) { Text("نتیجه‌ای پیدا نشد.", color = MutedText) }
+            else -> LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = 118.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                itemsIndexed(items, key = { _, item -> item.id }) { index, item ->
+                    PromptCard(
+                        item = item,
+                        favorite = item.id in favoriteIds,
+                        onFavorite = { onFavorite(item) },
+                    )
+                    if (index == (items.lastIndex - 3).coerceAtLeast(0)) {
+                        LaunchedEffect(items.size) { onLoadMore() }
+                    }
+                }
+                if (loadingMore) item { PromptSkeletonCard() }
+            }
         }
     }
 }
@@ -412,136 +492,178 @@ private fun PromptCard(
         }
     }
 
-    val ratio = (item.image.width.toFloat() / item.image.height.coerceAtLeast(1))
-        .coerceIn(0.55f, 1.5f)
-
-    Box(
-        Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(17.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+    Surface(
+        modifier = Modifier.fillMaxWidth().height(180.dp),
+        shape = RoundedCornerShape(22.dp),
+        color = Color(0xD90D0E12),
+        border = BorderStroke(1.dp, CardBorder),
     ) {
-        AsyncImage(
-            model = item.image.url,
-            contentDescription = item.title,
-            contentScale = ContentScale.FillWidth,
-            modifier = Modifier.fillMaxWidth().aspectRatio(ratio),
-        )
-
-        Box(
-            Modifier.matchParentSize().background(
-                Brush.verticalGradient(
-                    colorStops = arrayOf(
-                        0f to Color(0x16000000),
-                        0.62f to Color.Transparent,
-                        1f to Color(0xB8000000),
-                    ),
+        Row(Modifier.fillMaxSize()) {
+            Box(Modifier.weight(0.43f).fillMaxHeight()) {
+                AsyncImage(
+                    model = item.image.url,
+                    contentDescription = item.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
                 )
-            )
-        )
+                Box(
+                    Modifier.align(Alignment.TopStart).padding(10.dp).size(38.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xA31B1C1F))
+                        .clickable(
+                            role = Role.Button,
+                            onClickLabel = if (favorite) {
+                                "حذف از علاقه‌مندی"
+                            } else {
+                                "افزودن به علاقه‌مندی"
+                            },
+                            onClick = onFavorite,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        if (favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        null,
+                        Modifier.size(21.dp),
+                        tint = if (favorite) Color(0xFFFF5872) else Color.White,
+                    )
+                }
+            }
 
-        Box(
-            modifier = Modifier.align(Alignment.TopEnd)
-                .padding(2.dp)
-                .size(42.dp)
-                .clickable(
-                    role = Role.Button,
-                    onClickLabel = if (favorite) "حذف از علاقه‌مندی" else "افزودن به علاقه‌مندی",
-                    onClick = onFavorite,
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Box(
-                Modifier.size(28.dp).background(Color(0xA617181E), CircleShape),
-                contentAlignment = Alignment.Center,
+            Column(
+                Modifier.weight(0.57f).fillMaxHeight().padding(
+                    start = 15.dp, end = 11.dp, top = 11.dp, bottom = 11.dp
+                )
             ) {
-                Icon(
-                    imageVector = if (favorite) {
-                        Icons.Default.Favorite
-                    } else {
-                        Icons.Default.FavoriteBorder
-                    },
-                    contentDescription = null,
-                    modifier = Modifier.size(15.dp),
-                    tint = if (favorite) Color(0xFFFF5B73) else Color.White,
+                Row(verticalAlignment = Alignment.Top) {
+                    Text(
+                        "پرامپت آماده",
+                        color = PurpleSoft,
+                        fontSize = 11.sp,
+                        modifier = Modifier.weight(1f),
+                        textAlign = TextAlign.Right,
+                    )
+                    Icon(
+                        Icons.Default.MoreVert,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = Color(0xFF808188),
+                    )
+                }
+                Spacer(Modifier.height(7.dp))
+                Text(
+                    item.title,
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    lineHeight = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Right,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    item.promptText,
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MutedText,
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Left,
+                )
+                Spacer(Modifier.weight(1f))
+                Surface(
+                    onClick = {
+                        copyPrompt(context, item.promptText)
+                        copied = true
+                    },
+                    modifier = Modifier.align(Alignment.End),
+                    shape = RoundedCornerShape(50),
+                    color = Color(0xFF171125),
+                    contentColor = PurpleSoft,
+                    border = BorderStroke(1.dp, Color(0xFF432A64)),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 13.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(7.dp),
+                    ) {
+                        Icon(
+                            if (copied) Icons.Default.Check else Icons.Default.ContentCopy,
+                            null,
+                            Modifier.size(17.dp),
+                        )
+                        Text(
+                            if (copied) "کپی شد" else "کپی پرامپت",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
             }
         }
+    }
+}
 
+@Composable
+private fun NewPromptsBanner(count: Int, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 10.dp),
+        shape = RoundedCornerShape(50),
+        color = Color(0xFF171125),
+        contentColor = PurpleSoft,
+        border = BorderStroke(1.dp, Color(0xFF432A64)),
+    ) {
         Row(
-            modifier = Modifier.align(Alignment.BottomEnd)
-                .padding(7.dp)
-                .height(29.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(Color(0xE8212330))
-                .clickable(role = Role.Button) {
-                    copyPrompt(context, item.promptText)
-                    copied = true
-                }
-                .padding(horizontal = 9.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
+            horizontalArrangement = Arrangement.Center,
         ) {
-            Icon(
-                imageVector = if (copied) Icons.Default.Check else Icons.Default.ContentCopy,
-                contentDescription = null,
-                modifier = Modifier.size(13.dp),
-                tint = Color(0xFFBCC4FF),
-            )
+            Icon(Icons.Default.Refresh, null, Modifier.size(16.dp))
+            Spacer(Modifier.width(7.dp))
             Text(
-                text = if (copied) "کپی شد" else "کپی پرامپت",
-                color = Color(0xFFCDD2FF),
-                fontSize = 10.sp,
-                fontWeight = FontWeight.SemiBold,
+                "${count.toPersianDigits()} پرامپت جدید؛ برای نمایش بزنید",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
             )
         }
     }
 }
 
 @Composable
-private fun PromptSkeletonGrid(modifier: Modifier = Modifier) {
-    val ratios = remember {
-        listOf(0.72f, 0.92f, 0.62f, 1.18f, 0.84f, 0.7f, 1.05f, 0.78f)
-    }
-    LazyVerticalStaggeredGrid(
-        columns = StaggeredGridCells.Fixed(2),
+private fun PromptSkeletonList(modifier: Modifier = Modifier) {
+    LazyColumn(
         modifier = modifier,
-        contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 104.dp),
-        horizontalArrangement = Arrangement.spacedBy(7.dp),
-        verticalItemSpacing = 7.dp,
+        contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = 118.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
         userScrollEnabled = false,
     ) {
-        items(ratios.size) { index ->
-            PromptSkeletonCard(ratios[index])
-        }
+        items(5) { PromptSkeletonCard() }
     }
 }
 
 @Composable
-private fun PromptSkeletonCard(ratio: Float) {
+private fun PromptSkeletonCard() {
     val transition = rememberInfiniteTransition(label = "prompt-skeleton")
     val progress by transition.animateFloat(
         initialValue = -500f,
         targetValue = 1_000f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1_150, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
+            tween(1_150, easing = LinearEasing),
+            RepeatMode.Restart,
         ),
         label = "prompt-skeleton-progress",
     )
     val brush = Brush.linearGradient(
-        colors = listOf(
-            Color(0xFF171920),
-            Color(0xFF292C36),
-            Color(0xFF171920),
-        ),
+        colors = listOf(Color(0xFF111216), Color(0xFF25272E), Color(0xFF111216)),
         start = Offset(progress - 260f, 0f),
-        end = Offset(progress, 620f),
+        end = Offset(progress, 420f),
     )
     Box(
-        Modifier.fillMaxWidth()
-            .aspectRatio(ratio)
-            .clip(RoundedCornerShape(17.dp))
-            .background(brush)
+        Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(22.dp)).background(brush)
     )
 }
 
@@ -550,71 +672,82 @@ private fun FloatingBottomBar(
     tabs: List<Tab>,
     selected: Int,
     onSelected: (Int) -> Unit,
+    onCenterClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Surface(
-        modifier = modifier.fillMaxWidth(0.88f)
-            .widthIn(max = 390.dp)
-            .navigationBarsPadding()
-            .padding(bottom = 7.dp)
-            .shadow(16.dp, RoundedCornerShape(21.dp)),
-        shape = RoundedCornerShape(21.dp),
-        color = Color(0xE8181A22),
-        contentColor = Color.White,
-        border = BorderStroke(1.dp, Color(0x382E3341)),
+    Box(
+        modifier = modifier.fillMaxWidth(0.94f).widthIn(max = 450.dp)
+            .navigationBarsPadding().padding(bottom = 7.dp).height(82.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().height(58.dp).padding(4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
+        Surface(
+            modifier = Modifier.fillMaxWidth().height(68.dp).align(Alignment.BottomCenter)
+                .shadow(20.dp, RoundedCornerShape(27.dp)),
+            shape = RoundedCornerShape(27.dp),
+            color = Color(0xF0111217),
+            border = BorderStroke(1.dp, Color(0xFF282A31)),
         ) {
-            tabs.forEachIndexed { index, tab ->
-                val isSelected = index == selected
-                Column(
-                    modifier = Modifier.weight(1f).fillMaxSize()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(
-                            if (isSelected) Color(0xFF34394F) else Color.Transparent
-                        )
-                        .clickable(
-                            role = Role.Tab,
-                            onClickLabel = tab.title,
-                        ) { onSelected(index) },
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    tab.icon(
-                        Modifier.size(19.dp)
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = tab.title,
-                        fontSize = 9.sp,
-                        color = if (isSelected) {
-                            Color(0xFFE9EBFF)
-                        } else {
-                            Color(0xFFA5A8B2)
-                        },
-                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                    )
-                }
+            Row(
+                Modifier.fillMaxSize().padding(horizontal = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                BottomTab(tabs[0], selected == 3) { onSelected(0) }
+                BottomTab(tabs[1], selected == 2) { onSelected(1) }
+                Spacer(Modifier.width(74.dp))
+                BottomTab(tabs[2], selected == 1) { onSelected(2) }
+                BottomTab(tabs[3], selected == 0) { onSelected(3) }
+            }
+        }
+
+        Surface(
+            onClick = onCenterClick,
+            modifier = Modifier.size(70.dp).align(Alignment.TopCenter)
+                .shadow(22.dp, CircleShape),
+            shape = CircleShape,
+            color = Purple,
+            contentColor = Color.White,
+            border = BorderStroke(1.dp, Color(0xFFBE86FF)),
+        ) {
+            Box(
+                Modifier.background(
+                    Brush.linearGradient(listOf(Color(0xFFB866FF), Color(0xFF8042E7)))
+                ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Default.Add, "تازه‌سازی پرامپت‌ها", Modifier.size(35.dp))
             }
         }
     }
 }
 
 @Composable
-private fun ErrorState(
-    message: String,
-    retry: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
+private fun RowScope.BottomTab(tab: Tab, selected: Boolean, onClick: () -> Unit) {
+    val color = if (selected) PurpleSoft else Color(0xFF8B8D94)
     Column(
-        modifier.padding(start = 32.dp, end = 32.dp, bottom = 90.dp),
+        modifier = Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(20.dp))
+            .clickable(role = Role.Tab, onClickLabel = tab.title, onClick = onClick),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        tab.icon(Modifier.size(23.dp), color)
+        Spacer(Modifier.height(3.dp))
+        Text(
+            tab.title,
+            color = color,
+            fontSize = 9.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun ErrorState(message: String, retry: () -> Unit, modifier: Modifier = Modifier) {
+    Column(
+        modifier.padding(start = 32.dp, end = 32.dp, bottom = 110.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text(message, textAlign = TextAlign.Center)
+        Text(message, textAlign = TextAlign.Center, color = Color(0xFFD5D6DB))
         Spacer(Modifier.height(16.dp))
         Button(onClick = retry) { Text("تلاش دوباره") }
     }
@@ -624,28 +757,42 @@ private fun ErrorState(
 private fun AboutScreen() {
     val context = LocalContext.current
     Column(
-        Modifier.fillMaxSize().statusBarsPadding()
-            .padding(start = 24.dp, end = 24.dp, bottom = 104.dp),
+        Modifier.fillMaxSize().statusBarsPadding().padding(
+            start = 24.dp, end = 24.dp, bottom = 118.dp
+        ),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Spacer(Modifier.height(28.dp))
-        Icon(
-            Icons.Default.Info,
-            null,
-            modifier = Modifier.size(54.dp),
-            tint = Color(0xFF9CA7FF),
-        )
+        Spacer(Modifier.height(32.dp))
+        Surface(
+            modifier = Modifier.size(76.dp),
+            shape = CircleShape,
+            color = Color(0xFF171125),
+            border = BorderStroke(1.dp, Color(0xFF432A64)),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.Info, null, Modifier.size(36.dp), tint = PurpleSoft)
+            }
+        }
         Spacer(Modifier.height(18.dp))
         Text(
             "promptAll",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = Color(0xFFF4F5FA),
+            color = Color.White,
+            fontSize = 28.sp,
+            fontWeight = FontWeight.ExtraBold,
         )
-        Text("منبع پرامپت‌های آماده", color = Color(0xFF9A9DA8))
-        Spacer(Modifier.height(42.dp))
-        InfoRow("طراح", "سیدامید قدسی‌زاده")
-        InfoRow("نسخه اپلیکیشن", BuildConfig.VERSION_NAME)
+        Text("منبع پرامپت‌های آماده", color = MutedText)
+        Spacer(Modifier.height(38.dp))
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(22.dp),
+            color = Color(0xFF101116),
+            border = BorderStroke(1.dp, CardBorder),
+        ) {
+            Column(Modifier.padding(horizontal = 18.dp, vertical = 8.dp)) {
+                InfoRow("طراح", "سیدامید قدسی‌زاده")
+                InfoRow("نسخه اپلیکیشن", BuildConfig.VERSION_NAME)
+            }
+        }
         Button(
             onClick = {
                 context.startActivity(
@@ -655,7 +802,8 @@ private fun AboutScreen() {
                     )
                 )
             },
-            modifier = Modifier.fillMaxWidth().padding(top = 22.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
+            shape = RoundedCornerShape(18.dp),
         ) {
             Text("صفحه دانلود اپلیکیشن")
         }
@@ -665,15 +813,11 @@ private fun AboutScreen() {
 @Composable
 private fun InfoRow(label: String, value: String) {
     Row(
-        Modifier.fillMaxWidth().padding(vertical = 12.dp),
+        Modifier.fillMaxWidth().padding(vertical = 13.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text(
-            value,
-            color = Color(0xFFF0F1F6),
-            fontWeight = FontWeight.SemiBold,
-        )
-        Text(label, color = Color(0xFF9A9DA8))
+        Text(value, color = Color.White, fontWeight = FontWeight.Bold)
+        Text(label, color = MutedText)
     }
 }
 
@@ -691,4 +835,4 @@ private fun Favorite.toPrompt() = PromptDto(
 
 private fun Int.toPersianDigits(): String = toString()
     .map { char -> if (char in '0'..'9') "۰۱۲۳۴۵۶۷۸۹"[char - '0'] else char }
-    .joinToString(separator = "")
+    .joinToString("")
