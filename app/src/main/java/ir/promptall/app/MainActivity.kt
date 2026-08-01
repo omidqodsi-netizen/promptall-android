@@ -1095,14 +1095,14 @@ private fun AboutScreen() {
                 context.startActivity(
                     Intent(
                         Intent.ACTION_VIEW,
-                        Uri.parse("https://promptall.ir/promptapp/"),
+                        Uri.parse("https://cafebazaar.ir/app/ir.promptall.app"),
                     )
                 )
             },
             modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
             shape = RoundedCornerShape(18.dp),
         ) {
-            Text("صفحه دانلود اپلیکیشن")
+            Text("مشاهده برنامه در بازار")
         }
     }
 }

@@ -1,4 +1,4 @@
-# promptAll 3.3.0 — Market release
+# promptAll 3.4.1 — Market release
 
 This project builds a signed APK and AAB for Cafe Bazaar.
 
@@ -22,12 +22,12 @@ Never commit the keystore, passwords, or Base64 value to the repository.
 
 Every push to `main`, or a manual run of the workflow, creates:
 
-- `promptAll-v3.3.0-bazaar.apk`
-- `promptAll-v3.3.0-bazaar.aab`
-- `mapping-v3.3.0.txt`
+- `promptAll-v3.4.1-bazaar.apk`
+- `promptAll-v3.4.1-bazaar.aab`
+- `mapping-v3.4.1.txt`
 
 Download them from the successful GitHub Actions run under
-`promptAll-v3.3.0-bazaar-release`.
+`promptAll-v3.4.1-bazaar-release`.
 
 ## Permanent signing key
 
