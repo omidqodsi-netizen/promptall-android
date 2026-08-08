@@ -3,8 +3,6 @@ package ir.promptall.app
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -1052,7 +1050,6 @@ private fun ErrorState(message: String, retry: () -> Unit, modifier: Modifier = 
 
 @Composable
 private fun AboutScreen() {
-    val context = LocalContext.current
     Column(
         Modifier.fillMaxSize().statusBarsPadding().padding(
             start = 24.dp, end = 24.dp, bottom = 118.dp
@@ -1090,20 +1087,7 @@ private fun AboutScreen() {
                 InfoRow("نسخه اپلیکیشن", BuildConfig.VERSION_NAME)
             }
         }
-        Button(
-            onClick = {
-                context.startActivity(
-                    Intent(
-                        Intent.ACTION_VIEW,
-                        Uri.parse("https://cafebazaar.ir/app/ir.promptall.app"),
-                    )
-                )
-            },
-            modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
-            shape = RoundedCornerShape(18.dp),
-        ) {
-            Text("مشاهده برنامه در بازار")
-        }
+
     }
 }
 
