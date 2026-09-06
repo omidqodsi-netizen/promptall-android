@@ -395,6 +395,16 @@ private fun FeedContent(
     galleryMode: Boolean,
     onGalleryModeToggle: (() -> Unit)?,
 ) {
+    val galleryState = rememberLazyStaggeredGridState()
+    val feedHasScrolled = if (galleryMode && onGalleryModeToggle != null) {
+        galleryState.canScrollBackward
+    } else {
+        listState.canScrollBackward
+    }
+    val latestSectionVisible = showLatestSection && !(
+        homeMode == HomeFeedMode.LATEST && feedHasScrolled
+    )
+
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         AppHeader(
             title = title,
@@ -414,7 +424,7 @@ private fun FeedContent(
         if (newPromptCount > 0) {
             NewPromptsBanner(newPromptCount, onShowNewPrompts)
         }
-        if (showLatestSection) {
+        if (latestSectionVisible) {
             LatestPromptsSection(
                 latestItems = latestItems,
                 loading = latestLoading,
@@ -438,7 +448,6 @@ private fun FeedContent(
             }
             else -> {
                 if (galleryMode && onGalleryModeToggle != null) {
-                    val galleryState = rememberLazyStaggeredGridState()
                     LazyVerticalStaggeredGrid(
                         columns = StaggeredGridCells.Fixed(2),
                         state = galleryState,
@@ -614,17 +623,21 @@ private fun LatestPromptCard(item: PromptDto) {
                     }
                 }
             }
-            Text(
-                item.title,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 9.dp, vertical = 8.dp),
-                color = Color.White,
-                fontSize = 11.sp,
-                lineHeight = 15.sp,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Right,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Box(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    item.title,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 9.dp),
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Right,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
