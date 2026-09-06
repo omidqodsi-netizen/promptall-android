@@ -107,6 +107,7 @@ import ir.promptall.app.data.local.Favorite
 import ir.promptall.app.data.remote.PromptCategory
 import ir.promptall.app.data.remote.PromptDto
 import ir.promptall.app.data.remote.PromptImage
+import ir.promptall.app.ui.HomeFeedMode
 import ir.promptall.app.ui.PromptViewModel
 import ir.promptall.app.ui.theme.PromptAllTheme
 import kotlinx.coroutines.delay
@@ -155,7 +156,16 @@ private fun PromptAllApp(vm: PromptViewModel) {
     val homeListState = rememberLazyListState()
     val searchListState = rememberLazyListState()
     val favoriteListState = rememberLazyListState()
+    val homeFeed = if (state.homeMode == HomeFeedMode.RANDOM) {
+        state.randomHome
+    } else {
+        state.latestHome
+    }
     val lifecycleOwner = LocalLifecycleOwner.current
+
+    LaunchedEffect(state.homeMode) {
+        if (homeFeed.items.isNotEmpty()) homeListState.scrollToItem(0)
+    }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -193,12 +203,12 @@ private fun PromptAllApp(vm: PromptViewModel) {
             0 -> FeedScreen(
                 title = "پرامپت‌های آماده",
                 subtitle = "برای ساخت تصاویر با هوش مصنوعی",
-                items = state.home.items,
+                items = homeFeed.items,
                 favoriteIds = state.favoriteIds,
-                loading = state.home.loading,
-                refreshing = state.home.refreshing,
-                loadingMore = state.home.loadingMore,
-                error = state.home.error,
+                loading = homeFeed.loading,
+                refreshing = homeFeed.refreshing,
+                loadingMore = homeFeed.loadingMore,
+                error = homeFeed.error,
                 listState = homeListState,
                 onRetry = vm::refreshHome,
                 onRefresh = vm::refreshHome,
@@ -207,6 +217,12 @@ private fun PromptAllApp(vm: PromptViewModel) {
                 onSearchClick = { selected = 1 },
                 newPromptCount = state.newPromptCount,
                 onShowNewPrompts = vm::showNewPrompts,
+                showLatestSection = true,
+                latestItems = state.latestHome.items.take(8),
+                latestLoading = state.latestHome.loading,
+                homeMode = state.homeMode,
+                onShowLatest = vm::showLatestPrompts,
+                onShowRandom = vm::showRandomPrompts,
                 categories = state.categories,
                 categoriesLoading = state.categoriesLoading,
                 selectedCategory = state.selectedCategory,
@@ -267,7 +283,7 @@ private fun PromptAllApp(vm: PromptViewModel) {
             },
             onCenterClick = {
                 selected = 0
-                vm.refreshHome()
+                vm.randomizeHome()
             },
             modifier = Modifier.align(Alignment.BottomCenter),
         )
@@ -294,6 +310,12 @@ private fun FeedScreen(
     emptyText: String = "پرامپتی برای نمایش وجود ندارد.",
     newPromptCount: Int = 0,
     onShowNewPrompts: () -> Unit = {},
+    showLatestSection: Boolean = false,
+    latestItems: List<PromptDto> = emptyList(),
+    latestLoading: Boolean = false,
+    homeMode: HomeFeedMode = HomeFeedMode.RANDOM,
+    onShowLatest: () -> Unit = {},
+    onShowRandom: () -> Unit = {},
     categories: List<PromptCategory> = emptyList(),
     categoriesLoading: Boolean = false,
     selectedCategory: String? = null,
@@ -318,6 +340,12 @@ private fun FeedScreen(
             emptyText = emptyText,
             newPromptCount = newPromptCount,
             onShowNewPrompts = onShowNewPrompts,
+            showLatestSection = showLatestSection,
+            latestItems = latestItems,
+            latestLoading = latestLoading,
+            homeMode = homeMode,
+            onShowLatest = onShowLatest,
+            onShowRandom = onShowRandom,
             categories = categories,
             categoriesLoading = categoriesLoading,
             selectedCategory = selectedCategory,
@@ -354,6 +382,12 @@ private fun FeedContent(
     emptyText: String,
     newPromptCount: Int,
     onShowNewPrompts: () -> Unit,
+    showLatestSection: Boolean,
+    latestItems: List<PromptDto>,
+    latestLoading: Boolean,
+    homeMode: HomeFeedMode,
+    onShowLatest: () -> Unit,
+    onShowRandom: () -> Unit,
     categories: List<PromptCategory>,
     categoriesLoading: Boolean,
     selectedCategory: String?,
@@ -379,6 +413,16 @@ private fun FeedContent(
         }
         if (newPromptCount > 0) {
             NewPromptsBanner(newPromptCount, onShowNewPrompts)
+        }
+        if (showLatestSection) {
+            LatestPromptsSection(
+                latestItems = latestItems,
+                loading = latestLoading,
+                homeMode = homeMode,
+                onShowLatest = onShowLatest,
+                onShowRandom = onShowRandom,
+            )
+            HomeFeedModeLabel(homeMode)
         }
 
         when {
@@ -454,6 +498,186 @@ private fun FeedContent(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun LatestPromptsSection(
+    latestItems: List<PromptDto>,
+    loading: Boolean,
+    homeMode: HomeFeedMode,
+    onShowLatest: () -> Unit,
+    onShowRandom: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Surface(
+            onClick = if (homeMode == HomeFeedMode.RANDOM) onShowLatest else onShowRandom,
+            shape = RoundedCornerShape(50),
+            color = Color(0xFF171125),
+            contentColor = PurpleSoft,
+            border = BorderStroke(1.dp, Color(0xFF432A64)),
+        ) {
+            Text(
+                text = if (homeMode == HomeFeedMode.RANDOM) "نمایش بیشتر" else "نمایش تصادفی",
+                modifier = Modifier.padding(horizontal = 13.dp, vertical = 7.dp),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        Spacer(Modifier.weight(1f))
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                "آخرین پرامپت‌ها",
+                color = Color.White,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.ExtraBold,
+                textAlign = TextAlign.Right,
+            )
+            Text(
+                "جدیدترین موارد منتشرشده در سایت",
+                color = MutedText,
+                fontSize = 10.sp,
+                textAlign = TextAlign.Right,
+            )
+        }
+    }
+
+    LazyRow(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+        contentPadding = PaddingValues(horizontal = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(9.dp),
+        reverseLayout = true,
+    ) {
+        if (loading && latestItems.isEmpty()) {
+            items(4) {
+                LatestPromptSkeleton()
+            }
+        } else {
+            items(latestItems, key = { it.id }) { item ->
+                LatestPromptCard(item)
+            }
+        }
+    }
+}
+
+@Composable
+private fun LatestPromptCard(item: PromptDto) {
+    val context = LocalContext.current
+    var copied by remember(item.id) { mutableStateOf(false) }
+
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(1_100)
+            copied = false
+        }
+    }
+
+    Surface(
+        onClick = {
+            copyPrompt(context, item.promptText)
+            copied = true
+        },
+        modifier = Modifier.width(132.dp).height(158.dp),
+        shape = RoundedCornerShape(18.dp),
+        color = Color(0xFF101116),
+        border = BorderStroke(1.dp, CardBorder),
+    ) {
+        Column(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxWidth().height(104.dp)) {
+                AsyncImage(
+                    model = item.image.url,
+                    contentDescription = item.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                Surface(
+                    modifier = Modifier.align(Alignment.BottomStart).padding(7.dp),
+                    shape = RoundedCornerShape(50),
+                    color = Color(0xC915111F),
+                    contentColor = PurpleSoft,
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Icon(
+                            if (copied) Icons.Default.Check else Icons.Default.ContentCopy,
+                            null,
+                            Modifier.size(13.dp),
+                        )
+                        Text(if (copied) "کپی شد" else "کپی", fontSize = 9.sp)
+                    }
+                }
+            }
+            Text(
+                item.title,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 9.dp, vertical = 8.dp),
+                color = Color.White,
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Right,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun LatestPromptSkeleton() {
+    val transition = rememberInfiniteTransition(label = "latest-prompt-skeleton")
+    val progress by transition.animateFloat(
+        initialValue = -260f,
+        targetValue = 520f,
+        animationSpec = infiniteRepeatable(
+            tween(1_050, easing = LinearEasing),
+            RepeatMode.Restart,
+        ),
+        label = "latest-prompt-skeleton-progress",
+    )
+    val brush = Brush.linearGradient(
+        colors = listOf(Color(0xFF111216), Color(0xFF25272E), Color(0xFF111216)),
+        start = Offset(progress - 180f, 0f),
+        end = Offset(progress, 260f),
+    )
+    Box(
+        Modifier.width(132.dp).height(158.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(brush)
+    )
+}
+
+@Composable
+private fun HomeFeedModeLabel(homeMode: HomeFeedMode) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Spacer(Modifier.weight(1f))
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                if (homeMode == HomeFeedMode.RANDOM) "پیشنهادهای تصادفی" else "همهٔ آخرین پرامپت‌ها",
+                color = Color(0xFFE2E2E7),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Right,
+            )
+            Text(
+                if (homeMode == HomeFeedMode.RANDOM) {
+                    "با هر بار باز شدن اپ، ترکیب تازه‌ای می‌بینید"
+                } else {
+                    "مرتب‌شده از جدیدترین به قدیمی‌تر"
+                },
+                color = MutedText,
+                fontSize = 10.sp,
+                textAlign = TextAlign.Right,
+            )
         }
     }
 }
