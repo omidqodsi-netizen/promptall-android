@@ -9,6 +9,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -401,9 +408,9 @@ private fun FeedContent(
     } else {
         listState.canScrollBackward
     }
-    val latestSectionVisible = showLatestSection && !(
-        homeMode == HomeFeedMode.LATEST && feedHasScrolled
-    )
+    // The latest strip should get out of the way in both RANDOM and LATEST modes
+    // as soon as the main feed starts moving. It comes back when the feed is at top.
+    val latestSectionVisible = showLatestSection && !feedHasScrolled
 
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         AppHeader(
@@ -424,15 +431,37 @@ private fun FeedContent(
         if (newPromptCount > 0) {
             NewPromptsBanner(newPromptCount, onShowNewPrompts)
         }
-        if (latestSectionVisible) {
-            LatestPromptsSection(
-                latestItems = latestItems,
-                loading = latestLoading,
-                homeMode = homeMode,
-                onShowLatest = onShowLatest,
-                onShowRandom = onShowRandom,
-            )
-            HomeFeedModeLabel(homeMode)
+        AnimatedVisibility(
+            visible = latestSectionVisible,
+            enter = fadeIn(animationSpec = tween(190)) +
+                expandVertically(
+                    animationSpec = tween(280),
+                    expandFrom = Alignment.Top,
+                ) +
+                slideInVertically(
+                    animationSpec = tween(280),
+                    initialOffsetY = { -it / 7 },
+                ),
+            exit = fadeOut(animationSpec = tween(170)) +
+                shrinkVertically(
+                    animationSpec = tween(260),
+                    shrinkTowards = Alignment.Top,
+                ) +
+                slideOutVertically(
+                    animationSpec = tween(240),
+                    targetOffsetY = { -it / 6 },
+                ),
+        ) {
+            Column {
+                LatestPromptsSection(
+                    latestItems = latestItems,
+                    loading = latestLoading,
+                    homeMode = homeMode,
+                    onShowLatest = onShowLatest,
+                    onShowRandom = onShowRandom,
+                )
+                HomeFeedModeLabel(homeMode)
+            }
         }
 
         when {
