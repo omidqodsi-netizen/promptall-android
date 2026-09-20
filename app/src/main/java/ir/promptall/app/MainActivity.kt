@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
@@ -57,16 +58,20 @@ import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridS
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.ViewAgenda
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material3.Button
@@ -151,6 +156,7 @@ private data class Tab(
 @Composable
 private fun PromptAllApp(vm: PromptViewModel) {
     var selected by rememberSaveable { mutableIntStateOf(0) }
+    var showAbout by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val displayPreferences = remember {
         context.getSharedPreferences("promptall_display", Context.MODE_PRIVATE)
@@ -163,6 +169,7 @@ private fun PromptAllApp(vm: PromptViewModel) {
     val homeListState = rememberLazyListState()
     val searchListState = rememberLazyListState()
     val favoriteListState = rememberLazyListState()
+    val categoryListState = rememberLazyListState()
     val homeFeed = if (state.homeMode == HomeFeedMode.RANDOM) {
         state.randomHome
     } else {
@@ -174,6 +181,10 @@ private fun PromptAllApp(vm: PromptViewModel) {
         if (homeFeed.items.isNotEmpty()) homeListState.scrollToItem(0)
     }
 
+    LaunchedEffect(state.categoryFeedSlug) {
+        if (state.categoryFeedSlug != null) categoryListState.scrollToItem(0)
+    }
+
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) vm.checkForNewPrompts()
@@ -183,8 +194,8 @@ private fun PromptAllApp(vm: PromptViewModel) {
     }
 
     val tabs = listOf(
-        Tab("تنظیمات") { modifier, color ->
-            Icon(Icons.Default.Settings, null, modifier, tint = color)
+        Tab("دسته‌بندی") { modifier, color ->
+            Icon(Icons.Default.Category, null, modifier, tint = color)
         },
         Tab("علاقه‌مندی‌ها") { modifier, color ->
             Icon(Icons.Default.FavoriteBorder, null, modifier, tint = color)
@@ -206,94 +217,145 @@ private fun PromptAllApp(vm: PromptViewModel) {
             )
         )
     ) {
-        when (selected) {
-            0 -> FeedScreen(
-                title = "پرامپت‌های آماده",
-                subtitle = "برای ساخت تصاویر با هوش مصنوعی",
-                items = homeFeed.items,
-                favoriteIds = state.favoriteIds,
-                loading = homeFeed.loading,
-                refreshing = homeFeed.refreshing,
-                loadingMore = homeFeed.loadingMore,
-                error = homeFeed.error,
-                listState = homeListState,
-                onRetry = vm::refreshHome,
-                onRefresh = vm::refreshHome,
-                onLoadMore = vm::loadMoreHome,
-                onFavorite = vm::toggleFavorite,
-                onSearchClick = { selected = 1 },
-                newPromptCount = state.newPromptCount,
-                onShowNewPrompts = vm::showNewPrompts,
-                showLatestSection = true,
-                latestItems = state.latestHome.items.take(8),
-                latestLoading = state.latestHome.loading,
-                homeMode = state.homeMode,
-                onShowLatest = vm::showLatestPrompts,
-                onShowRandom = vm::showRandomPrompts,
-                categories = state.categories,
-                categoriesLoading = state.categoriesLoading,
-                selectedCategory = state.selectedCategory,
-                onCategorySelected = vm::selectCategory,
-                galleryMode = galleryMode,
-                onGalleryModeToggle = {
-                    galleryMode = !galleryMode
-                    displayPreferences.edit()
-                        .putBoolean("home_gallery_mode", galleryMode)
-                        .apply()
-                },
-            )
+        if (showAbout) {
+            BackHandler { showAbout = false }
+            AboutScreen(onBack = { showAbout = false })
+        } else {
+            if (selected == 3 && state.categoryFeedSlug != null) {
+                BackHandler { vm.closeCategory() }
+            }
 
-            1 -> SearchScreen(
-                query = state.query,
-                onQueryChange = vm::setQuery,
-                items = state.search.items,
-                favoriteIds = state.favoriteIds,
-                loading = state.search.loading,
-                loadingMore = state.search.loadingMore,
-                error = state.search.error,
-                listState = searchListState,
-                onRetry = vm::retrySearch,
-                onLoadMore = vm::loadMoreSearch,
-                onFavorite = vm::toggleFavorite,
-            )
+            when (selected) {
+                0 -> FeedScreen(
+                    title = "پرامپت‌های آماده",
+                    subtitle = "برای ساخت تصاویر با هوش مصنوعی",
+                    items = homeFeed.items,
+                    favoriteIds = state.favoriteIds,
+                    loading = homeFeed.loading,
+                    refreshing = homeFeed.refreshing,
+                    loadingMore = homeFeed.loadingMore,
+                    error = homeFeed.error,
+                    listState = homeListState,
+                    onRetry = vm::refreshHome,
+                    onRefresh = vm::refreshHome,
+                    onLoadMore = vm::loadMoreHome,
+                    onFavorite = vm::toggleFavorite,
+                    onSearchClick = { selected = 1 },
+                    newPromptCount = state.newPromptCount,
+                    onShowNewPrompts = vm::showNewPrompts,
+                    showLatestSection = true,
+                    latestItems = state.latestHome.items.take(8),
+                    latestLoading = state.latestHome.loading,
+                    homeMode = state.homeMode,
+                    onShowLatest = vm::showLatestPrompts,
+                    onShowRandom = vm::showRandomPrompts,
+                    categories = state.categories,
+                    categoriesLoading = state.categoriesLoading,
+                    selectedCategory = state.selectedCategory,
+                    onCategorySelected = vm::selectCategory,
+                    galleryMode = galleryMode,
+                    onGalleryModeToggle = {
+                        galleryMode = !galleryMode
+                        displayPreferences.edit()
+                            .putBoolean("home_gallery_mode", galleryMode)
+                            .apply()
+                    },
+                )
 
-            2 -> FeedScreen(
-                title = "علاقه‌مندی‌ها",
-                subtitle = "پرامپت‌هایی که برای بعد ذخیره کرده‌اید",
-                items = saved.map(Favorite::toPrompt),
-                favoriteIds = saved.map { it.id }.toSet(),
-                loading = false,
-                refreshing = false,
-                loadingMore = false,
-                error = null,
-                listState = favoriteListState,
-                onRetry = {},
-                onRefresh = null,
-                onLoadMore = {},
-                onFavorite = vm::toggleFavorite,
-                emptyText = "هنوز پرامپتی ذخیره نکرده‌اید.",
-            )
+                1 -> SearchScreen(
+                    query = state.query,
+                    onQueryChange = vm::setQuery,
+                    items = state.search.items,
+                    favoriteIds = state.favoriteIds,
+                    loading = state.search.loading,
+                    loadingMore = state.search.loadingMore,
+                    error = state.search.error,
+                    listState = searchListState,
+                    onRetry = vm::retrySearch,
+                    onLoadMore = vm::loadMoreSearch,
+                    onFavorite = vm::toggleFavorite,
+                )
 
-            else -> AboutScreen()
+                2 -> FeedScreen(
+                    title = "علاقه‌مندی‌ها",
+                    subtitle = "پرامپت‌هایی که برای بعد ذخیره کرده‌اید",
+                    items = saved.map(Favorite::toPrompt),
+                    favoriteIds = saved.map { it.id }.toSet(),
+                    loading = false,
+                    refreshing = false,
+                    loadingMore = false,
+                    error = null,
+                    listState = favoriteListState,
+                    onRetry = {},
+                    onRefresh = null,
+                    onLoadMore = {},
+                    onFavorite = vm::toggleFavorite,
+                    emptyText = "هنوز پرامپتی ذخیره نکرده‌اید.",
+                )
+
+                else -> {
+                    val activeSlug = state.categoryFeedSlug
+                    if (activeSlug != null) {
+                        val activeCategory = state.categories.firstOrNull { it.slug == activeSlug }
+                        FeedScreen(
+                            title = activeCategory?.name ?: if (activeSlug == PromptViewModel.TRENDING_CATEGORY_SLUG) {
+                                "ترند روز"
+                            } else {
+                                "پرامپت‌های دسته"
+                            },
+                            subtitle = "پرامپت‌های این دسته",
+                            items = state.categoryFeed.items,
+                            favoriteIds = state.favoriteIds,
+                            loading = state.categoryFeed.loading,
+                            refreshing = state.categoryFeed.refreshing,
+                            loadingMore = state.categoryFeed.loadingMore,
+                            error = state.categoryFeed.error,
+                            listState = categoryListState,
+                            onRetry = vm::retryCategory,
+                            onRefresh = vm::refreshCategory,
+                            onLoadMore = vm::loadMoreCategory,
+                            onFavorite = vm::toggleFavorite,
+                            onBackClick = vm::closeCategory,
+                        )
+                    } else {
+                        CategoriesScreen(
+                            categories = state.categories,
+                            categoriesLoading = state.categoriesLoading,
+                            trendingItems = state.trending.items,
+                            trendingLoading = state.trending.loading,
+                            trendingError = state.trending.error,
+                            refreshing = state.categoriesLoading || state.trending.refreshing,
+                            onRefresh = vm::refreshCategories,
+                            onCategoryClick = vm::openCategory,
+                            onTrendingClick = { vm.openCategory(PromptViewModel.TRENDING_CATEGORY_SLUG) },
+                            onInfoClick = { showAbout = true },
+                        )
+                    }
+                }
+            }
         }
 
-        FloatingBottomBar(
-            tabs = tabs,
-            selected = selected,
-            onSelected = { index ->
-                selected = when (index) {
-                    0 -> 3
-                    1 -> 2
-                    2 -> 1
-                    else -> 0
-                }
-            },
-            onCenterClick = {
-                selected = 0
-                vm.randomizeHome()
-            },
-            modifier = Modifier.align(Alignment.BottomCenter),
-        )
+        if (!showAbout) {
+            FloatingBottomBar(
+                tabs = tabs,
+                selected = selected,
+                onSelected = { index ->
+                    vm.closeCategory()
+                    selected = when (index) {
+                        0 -> 3
+                        1 -> 2
+                        2 -> 1
+                        else -> 0
+                    }
+                },
+                onCenterClick = {
+                    vm.closeCategory()
+                    selected = 0
+                    vm.randomizeHome()
+                },
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        }
     }
 }
 
@@ -329,6 +391,7 @@ private fun FeedScreen(
     onCategorySelected: (String?) -> Unit = {},
     galleryMode: Boolean = false,
     onGalleryModeToggle: (() -> Unit)? = null,
+    onBackClick: (() -> Unit)? = null,
 ) {
     val content: @Composable () -> Unit = {
         FeedContent(
@@ -359,6 +422,7 @@ private fun FeedScreen(
             onCategorySelected = onCategorySelected,
             galleryMode = galleryMode,
             onGalleryModeToggle = onGalleryModeToggle,
+            onBackClick = onBackClick,
         )
     }
     if (onRefresh != null) {
@@ -401,6 +465,7 @@ private fun FeedContent(
     onCategorySelected: (String?) -> Unit,
     galleryMode: Boolean,
     onGalleryModeToggle: (() -> Unit)?,
+    onBackClick: (() -> Unit)?,
 ) {
     val galleryState = rememberLazyStaggeredGridState()
     val feedHasScrolled = if (galleryMode && onGalleryModeToggle != null) {
@@ -419,6 +484,7 @@ private fun FeedContent(
             onSearchClick = onSearchClick,
             galleryMode = galleryMode,
             onGalleryModeToggle = onGalleryModeToggle,
+            onBackClick = onBackClick,
         )
         if (onSearchClick != null) {
             CategoryBar(
@@ -789,6 +855,287 @@ private fun CategoryChip(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CategoriesScreen(
+    categories: List<PromptCategory>,
+    categoriesLoading: Boolean,
+    trendingItems: List<PromptDto>,
+    trendingLoading: Boolean,
+    trendingError: String?,
+    refreshing: Boolean,
+    onRefresh: () -> Unit,
+    onCategoryClick: (String) -> Unit,
+    onTrendingClick: () -> Unit,
+    onInfoClick: () -> Unit,
+) {
+    Column(Modifier.fillMaxSize().statusBarsPadding()) {
+        AppHeader(
+            title = "دسته‌بندی پرامپت‌ها",
+            subtitle = "موضوع موردنظرتان را سریع پیدا کنید",
+            onSearchClick = null,
+            onInfoClick = onInfoClick,
+        )
+
+        PullToRefreshBox(
+            isRefreshing = refreshing,
+            onRefresh = onRefresh,
+            modifier = Modifier.fillMaxWidth().weight(1f),
+        ) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 118.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                item(key = "trending-title") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth()
+                            .padding(start = 14.dp, end = 14.dp, top = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Surface(
+                            onClick = onTrendingClick,
+                            shape = RoundedCornerShape(50),
+                            color = Color(0xFF171125),
+                            contentColor = PurpleSoft,
+                            border = BorderStroke(1.dp, Color(0xFF432A64)),
+                        ) {
+                            Text(
+                                "همه ترندها",
+                                modifier = Modifier.padding(horizontal = 13.dp, vertical = 7.dp),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                        Spacer(Modifier.weight(1f))
+                        Column(horizontalAlignment = Alignment.End) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "ترند روز",
+                                    color = Color.White,
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    textAlign = TextAlign.Right,
+                                )
+                                Spacer(Modifier.width(5.dp))
+                                Icon(
+                                    Icons.Default.LocalFireDepartment,
+                                    null,
+                                    modifier = Modifier.size(20.dp),
+                                    tint = PurpleSoft,
+                                )
+                            }
+                            Text(
+                                "پرامپت‌هایی که این روزها بیشتر مورد توجه‌اند",
+                                color = MutedText,
+                                fontSize = 10.sp,
+                                textAlign = TextAlign.Right,
+                            )
+                        }
+                    }
+                }
+
+                item(key = "trending-row") {
+                    when {
+                        trendingLoading && trendingItems.isEmpty() -> {
+                            LazyRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentPadding = PaddingValues(horizontal = 14.dp),
+                                horizontalArrangement = Arrangement.spacedBy(9.dp),
+                                reverseLayout = true,
+                            ) {
+                                items(4) { LatestPromptSkeleton() }
+                            }
+                        }
+                        trendingItems.isNotEmpty() -> {
+                            LazyRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                contentPadding = PaddingValues(horizontal = 14.dp),
+                                horizontalArrangement = Arrangement.spacedBy(9.dp),
+                                reverseLayout = true,
+                            ) {
+                                items(trendingItems, key = { it.id }) { item ->
+                                    LatestPromptCard(item)
+                                }
+                            }
+                        }
+                        trendingError != null -> {
+                            Surface(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+                                shape = RoundedCornerShape(18.dp),
+                                color = Color(0xFF101116),
+                                border = BorderStroke(1.dp, CardBorder),
+                            ) {
+                                Text(
+                                    "ترند روز فعلاً دریافت نشد؛ صفحه را به پایین بکشید و دوباره تلاش کنید.",
+                                    modifier = Modifier.padding(16.dp),
+                                    color = MutedText,
+                                    fontSize = 12.sp,
+                                    textAlign = TextAlign.Right,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                item(key = "category-title") {
+                    Column(
+                        modifier = Modifier.fillMaxWidth()
+                            .padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 2.dp),
+                        horizontalAlignment = Alignment.End,
+                    ) {
+                        Text(
+                            "همه دسته‌بندی‌ها",
+                            color = Color.White,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            textAlign = TextAlign.Right,
+                        )
+                        Text(
+                            "برای دیدن پرامپت‌های هر موضوع روی آن بزنید",
+                            color = MutedText,
+                            fontSize = 10.sp,
+                            textAlign = TextAlign.Right,
+                        )
+                    }
+                }
+
+                if (categoriesLoading && categories.isEmpty()) {
+                    items(4, key = { "category-skeleton-$it" }) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            CategorySkeletonCard(Modifier.weight(1f))
+                            CategorySkeletonCard(Modifier.weight(1f))
+                        }
+                    }
+                } else if (categories.isEmpty()) {
+                    item(key = "category-empty") {
+                        Text(
+                            "دسته‌بندی‌ای برای نمایش دریافت نشد.",
+                            modifier = Modifier.fillMaxWidth().padding(24.dp),
+                            color = MutedText,
+                            fontSize = 13.sp,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                } else {
+                    items(categories.chunked(2), key = { row -> row.joinToString("-") { it.id.toString() } }) { row ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            row.forEach { category ->
+                                CategoryGridCard(
+                                    category = category,
+                                    onClick = { onCategoryClick(category.slug) },
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                            if (row.size == 1) Spacer(Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CategoryGridCard(
+    category: PromptCategory,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val isTrending = category.slug == PromptViewModel.TRENDING_CATEGORY_SLUG ||
+        category.name.contains("ترند", ignoreCase = true)
+    val isVideo = category.name.contains("ویدئو", ignoreCase = true) ||
+        category.name.contains("video", ignoreCase = true) ||
+        category.slug.contains("video", ignoreCase = true)
+
+    Surface(
+        onClick = onClick,
+        modifier = modifier.height(108.dp),
+        shape = RoundedCornerShape(20.dp),
+        color = Color(0xFF101116),
+        border = BorderStroke(
+            1.dp,
+            if (isTrending || isVideo) Color(0xFF432A64) else CardBorder,
+        ),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(14.dp),
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = if (isTrending || isVideo) Color(0xFF21162D) else Color(0xFF18191E),
+                    contentColor = if (isTrending || isVideo) PurpleSoft else Color(0xFFB5B6BC),
+                ) {
+                    Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) {
+                        Icon(
+                            when {
+                                isTrending -> Icons.Default.LocalFireDepartment
+                                isVideo -> Icons.Default.Videocam
+                                else -> Icons.Default.Category
+                            },
+                            null,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                }
+                if (category.count > 0) {
+                    Text(
+                        "${category.count.toPersianDigits()} پرامپت",
+                        color = MutedText,
+                        fontSize = 9.sp,
+                    )
+                }
+            }
+            Text(
+                category.name,
+                modifier = Modifier.fillMaxWidth(),
+                color = Color.White,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Right,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CategorySkeletonCard(modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "category-skeleton")
+    val progress by transition.animateFloat(
+        initialValue = -220f,
+        targetValue = 480f,
+        animationSpec = infiniteRepeatable(
+            tween(1_050, easing = LinearEasing),
+            RepeatMode.Restart,
+        ),
+        label = "category-skeleton-progress",
+    )
+    val brush = Brush.linearGradient(
+        colors = listOf(Color(0xFF111216), Color(0xFF25272E), Color(0xFF111216)),
+        start = Offset(progress - 180f, 0f),
+        end = Offset(progress, 220f),
+    )
+    Box(
+        modifier.height(108.dp).clip(RoundedCornerShape(20.dp)).background(brush)
+    )
+}
+
 @Composable
 private fun AppHeader(
     title: String,
@@ -796,11 +1143,31 @@ private fun AppHeader(
     onSearchClick: (() -> Unit)?,
     galleryMode: Boolean = false,
     onGalleryModeToggle: (() -> Unit)? = null,
+    onBackClick: (() -> Unit)? = null,
+    onInfoClick: (() -> Unit)? = null,
 ) {
     Row(
         Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 15.dp, bottom = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (onBackClick != null) {
+            HeaderCircleButton(
+                onClick = onBackClick,
+                contentDescription = "بازگشت",
+            ) {
+                Icon(Icons.Default.ArrowBack, null, Modifier.size(24.dp), tint = Color.White)
+            }
+            Spacer(Modifier.width(9.dp))
+        }
+        if (onInfoClick != null) {
+            HeaderCircleButton(
+                onClick = onInfoClick,
+                contentDescription = "اطلاعات برنامه",
+            ) {
+                Icon(Icons.Default.Settings, null, Modifier.size(24.dp), tint = Color.White)
+            }
+            Spacer(Modifier.width(9.dp))
+        }
         if (onSearchClick != null) {
             HeaderCircleButton(
                 onClick = onSearchClick,
@@ -1315,45 +1682,50 @@ private fun ErrorState(message: String, retry: () -> Unit, modifier: Modifier = 
 }
 
 @Composable
-private fun AboutScreen() {
-    Column(
-        Modifier.fillMaxSize().statusBarsPadding().padding(
-            start = 24.dp, end = 24.dp, bottom = 118.dp
-        ),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Spacer(Modifier.height(32.dp))
-        Surface(
-            modifier = Modifier.size(76.dp),
-            shape = CircleShape,
-            color = Color(0xFF171125),
-            border = BorderStroke(1.dp, Color(0xFF432A64)),
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.Info, null, Modifier.size(36.dp), tint = PurpleSoft)
-            }
-        }
-        Spacer(Modifier.height(18.dp))
-        Text(
-            "promptAll",
-            color = Color.White,
-            fontSize = 28.sp,
-            fontWeight = FontWeight.ExtraBold,
+private fun AboutScreen(onBack: () -> Unit) {
+    Column(Modifier.fillMaxSize().statusBarsPadding()) {
+        AppHeader(
+            title = "اطلاعات برنامه",
+            subtitle = "درباره PromptAll",
+            onSearchClick = null,
+            onBackClick = onBack,
         )
-        Text("منبع پرامپت‌های آماده", color = MutedText)
-        Spacer(Modifier.height(38.dp))
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(22.dp),
-            color = Color(0xFF101116),
-            border = BorderStroke(1.dp, CardBorder),
+        Column(
+            Modifier.fillMaxSize().padding(start = 24.dp, end = 24.dp, bottom = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Column(Modifier.padding(horizontal = 18.dp, vertical = 8.dp)) {
-                InfoRow("طراح", "سیدامید قدسی‌زاده")
-                InfoRow("نسخه اپلیکیشن", BuildConfig.VERSION_NAME)
+            Spacer(Modifier.height(12.dp))
+            Surface(
+                modifier = Modifier.size(76.dp),
+                shape = CircleShape,
+                color = Color(0xFF171125),
+                border = BorderStroke(1.dp, Color(0xFF432A64)),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.Info, null, Modifier.size(36.dp), tint = PurpleSoft)
+                }
+            }
+            Spacer(Modifier.height(18.dp))
+            Text(
+                "promptAll",
+                color = Color.White,
+                fontSize = 28.sp,
+                fontWeight = FontWeight.ExtraBold,
+            )
+            Text("منبع پرامپت‌های آماده", color = MutedText)
+            Spacer(Modifier.height(38.dp))
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(22.dp),
+                color = Color(0xFF101116),
+                border = BorderStroke(1.dp, CardBorder),
+            ) {
+                Column(Modifier.padding(horizontal = 18.dp, vertical = 8.dp)) {
+                    InfoRow("طراح", "سیدامید قدسی‌زاده")
+                    InfoRow("نسخه اپلیکیشن", BuildConfig.VERSION_NAME)
+                }
             }
         }
-
     }
 }
 

@@ -43,6 +43,9 @@ data class PromptUiState(
     val categories: List<PromptCategory> = emptyList(),
     val categoriesLoading: Boolean = false,
     val selectedCategory: String? = null,
+    val trending: FeedState = FeedState(hasMore = false),
+    val categoryFeed: FeedState = FeedState(),
+    val categoryFeedSlug: String? = null,
 )
 
 class PromptViewModel(application: Application) : AndroidViewModel(application) {
@@ -60,6 +63,8 @@ class PromptViewModel(application: Application) : AndroidViewModel(application) 
     )
 
     private var homeJob: Job? = null
+    private var trendingJob: Job? = null
+    private var categoryFeedJob: Job? = null
     private var searchDebounceJob: Job? = null
     private var searchRequestJob: Job? = null
     private var pendingFirstPage: PromptPage? = null
@@ -74,6 +79,7 @@ class PromptViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
         loadCategories()
+        loadTrending()
         loadCachedHome()
     }
 
@@ -89,6 +95,146 @@ class PromptViewModel(application: Application) : AndroidViewModel(application) 
             .onFailure {
                 state.value = state.value.copy(categoriesLoading = false)
             }
+    }
+
+    fun refreshCategories() {
+        loadCategories()
+        loadTrending()
+    }
+
+    private fun loadTrending() {
+        trendingJob?.cancel()
+        trendingJob = viewModelScope.launch {
+            val old = state.value.trending
+            state.value = state.value.copy(
+                trending = old.copy(
+                    loading = old.items.isEmpty(),
+                    refreshing = old.items.isNotEmpty(),
+                    error = null,
+                )
+            )
+            runCatching {
+                app.api.prompts(
+                    page = 1,
+                    perPage = TRENDING_PREVIEW_COUNT,
+                    category = TRENDING_CATEGORY_SLUG,
+                )
+            }.onSuccess { page ->
+                state.value = state.value.copy(
+                    trending = FeedState(
+                        items = page.items,
+                        loading = false,
+                        refreshing = false,
+                        loadingMore = false,
+                        error = null,
+                        hasMore = page.hasMore,
+                        page = page.page,
+                    )
+                )
+            }.onFailure {
+                val current = state.value.trending
+                state.value = state.value.copy(
+                    trending = current.copy(
+                        loading = false,
+                        refreshing = false,
+                        error = if (current.items.isEmpty()) {
+                            "دریافت پرامپت‌های ترند انجام نشد."
+                        } else {
+                            null
+                        },
+                    )
+                )
+            }
+        }
+    }
+
+    fun openCategory(slug: String) {
+        val normalized = slug.trim()
+        if (normalized.isEmpty()) return
+        categoryFeedJob?.cancel()
+        state.value = state.value.copy(
+            categoryFeedSlug = normalized,
+            categoryFeed = FeedState(),
+        )
+        loadCategoryFeed(reset = true, userInitiated = false)
+    }
+
+    fun closeCategory() {
+        categoryFeedJob?.cancel()
+        state.value = state.value.copy(
+            categoryFeedSlug = null,
+            categoryFeed = FeedState(),
+        )
+    }
+
+    fun refreshCategory() {
+        loadCategoryFeed(reset = true, userInitiated = true)
+    }
+
+    fun retryCategory() {
+        loadCategoryFeed(reset = true, userInitiated = false)
+    }
+
+    fun loadMoreCategory() {
+        loadCategoryFeed(reset = false, userInitiated = false)
+    }
+
+    private fun loadCategoryFeed(reset: Boolean, userInitiated: Boolean) {
+        val slug = state.value.categoryFeedSlug ?: return
+        val feed = state.value.categoryFeed
+        if (!reset && (feed.loading || feed.refreshing || feed.loadingMore || !feed.hasMore)) return
+
+        categoryFeedJob?.cancel()
+        categoryFeedJob = viewModelScope.launch {
+            val old = state.value.categoryFeed
+            val nextPage = if (reset) 1 else old.page + 1
+            state.value = state.value.copy(
+                categoryFeed = old.copy(
+                    items = if (reset && old.items.isEmpty()) emptyList() else old.items,
+                    loading = reset && old.items.isEmpty(),
+                    refreshing = reset && userInitiated && old.items.isNotEmpty(),
+                    loadingMore = !reset,
+                    error = null,
+                )
+            )
+
+            runCatching { app.api.prompts(page = nextPage, category = slug) }
+                .onSuccess { page ->
+                    if (state.value.categoryFeedSlug != slug) return@onSuccess
+                    val current = state.value.categoryFeed
+                    state.value = state.value.copy(
+                        categoryFeed = current.copy(
+                            items = if (reset) {
+                                page.items
+                            } else {
+                                (current.items + page.items).distinctBy(PromptDto::id)
+                            },
+                            loading = false,
+                            refreshing = false,
+                            loadingMore = false,
+                            error = null,
+                            hasMore = page.hasMore,
+                            page = page.page,
+                        )
+                    )
+                }
+                .onFailure {
+                    if (state.value.categoryFeedSlug != slug) return@onFailure
+                    val current = state.value.categoryFeed
+                    state.value = state.value.copy(
+                        categoryFeed = current.copy(
+                            loading = false,
+                            refreshing = false,
+                            loadingMore = false,
+                            error = if (current.items.isEmpty()) {
+                                "دریافت پرامپت‌های این دسته انجام نشد. اتصال اینترنت را بررسی کنید."
+                            } else {
+                                null
+                            },
+                        )
+                    )
+                }
+        }
     }
 
     fun selectCategory(slug: String?) {
@@ -582,5 +728,7 @@ class PromptViewModel(application: Application) : AndroidViewModel(application) 
         private const val LATEST_PREVIEW_COUNT = 8
         private const val RANDOM_INITIAL_PAGE_COUNT = 2
         private const val MAX_CACHED_PROMPTS = 100
+        private const val TRENDING_PREVIEW_COUNT = 10
+        const val TRENDING_CATEGORY_SLUG = "trending-prompts"
     }
 }
