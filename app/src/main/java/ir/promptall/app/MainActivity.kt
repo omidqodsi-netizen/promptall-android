@@ -4,7 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
+import android.widget.Toast
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -26,6 +26,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -53,6 +54,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
+import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
 import androidx.compose.foundation.lazy.staggeredgrid.items as staggeredItems
@@ -107,6 +109,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
@@ -181,6 +184,7 @@ private fun PromptAllApp(vm: PromptViewModel) {
     val state by vm.state
     val saved by vm.favorites.collectAsStateWithLifecycle()
     val homeListState = rememberLazyListState()
+    val homeGalleryState = rememberLazyStaggeredGridState()
     val searchListState = rememberLazyListState()
     val favoriteListState = rememberLazyListState()
     val categoryListState = rememberLazyListState()
@@ -314,6 +318,7 @@ private fun PromptAllApp(vm: PromptViewModel) {
                     selectedCategory = state.selectedCategory,
                     onCategorySelected = vm::selectCategory,
                     galleryMode = galleryMode,
+                    galleryState = homeGalleryState,
                     onGalleryModeToggle = {
                         galleryMode = !galleryMode
                         displayPreferences.edit()
@@ -455,6 +460,7 @@ private fun FeedScreen(
     selectedCategory: String? = null,
     onCategorySelected: (String?) -> Unit = {},
     galleryMode: Boolean = false,
+    galleryState: LazyStaggeredGridState? = null,
     onGalleryModeToggle: (() -> Unit)? = null,
     onBackClick: (() -> Unit)? = null,
 ) {
@@ -487,6 +493,7 @@ private fun FeedScreen(
             selectedCategory = selectedCategory,
             onCategorySelected = onCategorySelected,
             galleryMode = galleryMode,
+            externalGalleryState = galleryState,
             onGalleryModeToggle = onGalleryModeToggle,
             onBackClick = onBackClick,
         )
@@ -531,10 +538,12 @@ private fun FeedContent(
     selectedCategory: String?,
     onCategorySelected: (String?) -> Unit,
     galleryMode: Boolean,
+    externalGalleryState: LazyStaggeredGridState?,
     onGalleryModeToggle: (() -> Unit)?,
     onBackClick: (() -> Unit)?,
 ) {
-    val galleryState = rememberLazyStaggeredGridState()
+    val rememberedGalleryState = rememberLazyStaggeredGridState()
+    val galleryState = externalGalleryState ?: rememberedGalleryState
     val feedHasScrolled = if (galleryMode && onGalleryModeToggle != null) {
         galleryState.canScrollBackward
     } else {
@@ -1620,24 +1629,24 @@ private fun GalleryPromptCard(
 private data class AiDestination(
     val name: String,
     val subtitle: String,
-    val url: String,
+    val packageName: String,
 )
 
 private val AiDestinations = listOf(
     AiDestination(
         name = "ChatGPT",
-        subtitle = "ویرایش و استفاده از پرامپت",
-        url = "https://chatgpt.com/",
+        subtitle = "ارسال مستقیم پرامپت به ChatGPT",
+        packageName = "com.openai.chatgpt",
     ),
     AiDestination(
         name = "Gemini",
-        subtitle = "استفاده در Gemini",
-        url = "https://gemini.google.com/",
+        subtitle = "ارسال مستقیم پرامپت به Gemini",
+        packageName = "com.google.android.apps.bard",
     ),
     AiDestination(
         name = "Grok",
-        subtitle = "استفاده در Grok",
-        url = "https://grok.com/",
+        subtitle = "ارسال مستقیم پرامپت به Grok",
+        packageName = "ai.x.grok",
     ),
 )
 
@@ -1829,7 +1838,7 @@ private fun PromptDetailScreen(
                 Column(Modifier.padding(horizontal = 14.dp)) {
                     DetailSectionTitle(
                         title = "باز کردن در AI",
-                        subtitle = "پرامپت کپی می‌شود و سرویس انتخابی باز خواهد شد",
+                        subtitle = "پرامپت به اپ انتخابی فرستاده می‌شود؛ بدون باز کردن مرورگر",
                     )
                 }
                 Spacer(Modifier.height(10.dp))
@@ -2245,14 +2254,17 @@ private fun AboutScreen(onBack: () -> Unit) {
         ) {
             Spacer(Modifier.height(12.dp))
             Surface(
-                modifier = Modifier.size(76.dp),
-                shape = CircleShape,
-                color = Color(0xFF171125),
+                modifier = Modifier.size(82.dp),
+                shape = RoundedCornerShape(22.dp),
+                color = Color(0xFF111217),
                 border = BorderStroke(1.dp, Color(0xFF432A64)),
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.Info, null, Modifier.size(36.dp), tint = PurpleSoft)
-                }
+                Image(
+                    painter = painterResource(R.drawable.ic_launcher_foreground),
+                    contentDescription = "آیکون PromptAll",
+                    modifier = Modifier.fillMaxSize().padding(4.dp),
+                    contentScale = ContentScale.Fit,
+                )
             }
             Spacer(Modifier.height(18.dp))
             Text(
@@ -2299,11 +2311,47 @@ private fun openInAi(
     destination: AiDestination,
     promptText: String,
 ) {
+    // Keep a clipboard copy as a safe fallback, but never redirect to a browser.
     copyPrompt(context, promptText)
-    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(destination.url)).apply {
+
+    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, promptText)
+        setPackage(destination.packageName)
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
-    runCatching { context.startActivity(intent) }
+
+    val packageManager = context.packageManager
+    if (shareIntent.resolveActivity(packageManager) != null) {
+        runCatching { context.startActivity(shareIntent) }
+            .onFailure { launchAiAppOnly(context, destination) }
+        return
+    }
+
+    launchAiAppOnly(context, destination)
+}
+
+private fun launchAiAppOnly(context: Context, destination: AiDestination) {
+    val launchIntent = context.packageManager
+        .getLaunchIntentForPackage(destination.packageName)
+        ?.apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+
+    if (launchIntent != null) {
+        runCatching { context.startActivity(launchIntent) }
+            .onFailure {
+                Toast.makeText(
+                    context,
+                    "باز کردن ${destination.name} انجام نشد؛ پرامپت کپی شده است.",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+    } else {
+        Toast.makeText(
+            context,
+            "${destination.name} روی دستگاه نصب نیست؛ پرامپت کپی شده است.",
+            Toast.LENGTH_SHORT,
+        ).show()
+    }
 }
 
 private fun sharePrompt(context: Context, item: PromptDto) {
@@ -2311,7 +2359,7 @@ private fun sharePrompt(context: Context, item: PromptDto) {
         append(item.title)
         append("\n\n")
         append(item.promptText)
-        append("\n\nPromptAll — promptall.ir")
+        append("\n\nPromptAll")
     }
     val intent = Intent(Intent.ACTION_SEND).apply {
         type = "text/plain"
