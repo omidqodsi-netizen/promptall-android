@@ -46,6 +46,7 @@ data class PromptUiState(
     val trending: FeedState = FeedState(hasMore = false),
     val categoryFeed: FeedState = FeedState(),
     val categoryFeedSlug: String? = null,
+    val similarPrompts: FeedState = FeedState(hasMore = false),
 )
 
 class PromptViewModel(application: Application) : AndroidViewModel(application) {
@@ -65,6 +66,8 @@ class PromptViewModel(application: Application) : AndroidViewModel(application) 
     private var homeJob: Job? = null
     private var trendingJob: Job? = null
     private var categoryFeedJob: Job? = null
+    private var similarPromptsJob: Job? = null
+    private var similarPromptRequestId: Long? = null
     private var searchDebounceJob: Job? = null
     private var searchRequestJob: Job? = null
     private var pendingFirstPage: PromptPage? = null
@@ -235,6 +238,120 @@ class PromptViewModel(application: Application) : AndroidViewModel(application) 
                     )
                 }
         }
+    }
+
+
+    fun loadSimilarPrompts(item: PromptDto, sourceCategory: String?) {
+        similarPromptsJob?.cancel()
+        val promptId = item.id
+        similarPromptRequestId = promptId
+        state.value = state.value.copy(
+            similarPrompts = FeedState(loading = true, hasMore = false),
+        )
+
+        similarPromptsJob = viewModelScope.launch {
+            val normalizedCategory = sourceCategory
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() && it != "all" }
+            val searchQuery = buildSimilarSearchQuery(item.title)
+
+            val primary = runCatching {
+                when {
+                    normalizedCategory != null -> app.api.prompts(
+                        page = 1,
+                        perPage = SIMILAR_PROMPTS_FETCH_COUNT,
+                        category = normalizedCategory,
+                    )
+                    searchQuery.isNotBlank() -> app.api.prompts(
+                        page = 1,
+                        perPage = SIMILAR_PROMPTS_FETCH_COUNT,
+                        search = searchQuery,
+                    )
+                    else -> app.api.prompts(
+                        page = 1,
+                        perPage = SIMILAR_PROMPTS_FETCH_COUNT,
+                    )
+                }
+            }.getOrNull()
+
+            val candidates = buildList {
+                primary?.items?.let(::addAll)
+                addAll(localSimilarCandidates())
+            }
+                .asSequence()
+                .filter { it.id != promptId }
+                .distinctBy(PromptDto::id)
+                .sortedByDescending { similarityScore(item, it) }
+                .take(SIMILAR_PROMPTS_DISPLAY_COUNT)
+                .toList()
+
+            if (similarPromptRequestId != promptId) return@launch
+            state.value = state.value.copy(
+                similarPrompts = FeedState(
+                    items = candidates,
+                    loading = false,
+                    error = if (candidates.isEmpty() && primary == null) {
+                        "دریافت پرامپت‌های مشابه انجام نشد."
+                    } else {
+                        null
+                    },
+                    hasMore = false,
+                    page = if (candidates.isEmpty()) 0 else 1,
+                )
+            )
+        }
+    }
+
+    fun clearSimilarPrompts() {
+        similarPromptRequestId = null
+        similarPromptsJob?.cancel()
+        state.value = state.value.copy(
+            similarPrompts = FeedState(hasMore = false),
+        )
+    }
+
+    private fun localSimilarCandidates(): List<PromptDto> {
+        val snapshot = state.value
+        return buildList {
+            addAll(snapshot.latestHome.items)
+            addAll(snapshot.randomHome.items)
+            addAll(snapshot.categoryFeed.items)
+            addAll(snapshot.trending.items)
+            addAll(snapshot.search.items)
+        }.distinctBy(PromptDto::id)
+    }
+
+    private fun buildSimilarSearchQuery(title: String): String {
+        val stopWords = setOf(
+            "پرامپت", "آماده", "ساخت", "عکس", "تصویر", "هوش", "مصنوعی",
+            "prompt", "image", "photo", "create", "with", "for", "the", "and",
+        )
+        return title
+            .replace(Regex("""[^\p{L}\p{N}\s]"""), " ")
+            .split(Regex("""\s+"""))
+            .map { it.trim() }
+            .filter { it.length >= 3 && it.lowercase() !in stopWords }
+            .take(3)
+            .joinToString(" ")
+    }
+
+    private fun similarityScore(source: PromptDto, candidate: PromptDto): Int {
+        fun tokens(value: String): Set<String> = value
+            .lowercase()
+            .replace(Regex("""[^\p{L}\p{N}\s]"""), " ")
+            .split(Regex("""\s+"""))
+            .filter { it.length >= 3 }
+            .toSet()
+
+        val sourceTitle = tokens(source.title)
+        val candidateTitle = tokens(candidate.title)
+        val sourcePrompt = tokens(source.promptText).take(40).toSet()
+        val candidatePrompt = tokens(candidate.promptText).take(40).toSet()
+
+        return (sourceTitle intersect candidateTitle).size * 5 +
+            (sourceTitle intersect candidatePrompt).size * 2 +
+            (sourcePrompt intersect candidateTitle).size * 2 +
+            (sourcePrompt intersect candidatePrompt).size
     }
 
     fun selectCategory(slug: String?) {
@@ -729,6 +846,8 @@ class PromptViewModel(application: Application) : AndroidViewModel(application) 
         private const val RANDOM_INITIAL_PAGE_COUNT = 2
         private const val MAX_CACHED_PROMPTS = 100
         private const val TRENDING_PREVIEW_COUNT = 10
+        private const val SIMILAR_PROMPTS_FETCH_COUNT = 18
+        private const val SIMILAR_PROMPTS_DISPLAY_COUNT = 8
         const val TRENDING_CATEGORY_SLUG = "trending-prompts"
     }
 }

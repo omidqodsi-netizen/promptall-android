@@ -3,6 +3,8 @@ package ir.promptall.app
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -59,6 +61,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
@@ -68,8 +71,11 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.ViewAgenda
@@ -153,10 +159,18 @@ private data class Tab(
     val icon: @Composable (Modifier, Color) -> Unit,
 )
 
+private data class DetailEntry(
+    val prompt: PromptDto,
+    val sourceCategory: String?,
+)
+
 @Composable
 private fun PromptAllApp(vm: PromptViewModel) {
     var selected by rememberSaveable { mutableIntStateOf(0) }
     var showAbout by rememberSaveable { mutableStateOf(false) }
+    var detailPrompt by remember { mutableStateOf<PromptDto?>(null) }
+    var detailSourceCategory by remember { mutableStateOf<String?>(null) }
+    var detailHistory by remember { mutableStateOf<List<DetailEntry>>(emptyList()) }
     val context = LocalContext.current
     val displayPreferences = remember {
         context.getSharedPreferences("promptall_display", Context.MODE_PRIVATE)
@@ -208,6 +222,36 @@ private fun PromptAllApp(vm: PromptViewModel) {
         },
     )
 
+    val openPromptDetail: (PromptDto, String?) -> Unit = { item, sourceCategory ->
+        detailHistory = emptyList()
+        detailPrompt = item
+        detailSourceCategory = sourceCategory
+        vm.loadSimilarPrompts(item, sourceCategory)
+    }
+
+    val openSimilarDetail: (PromptDto) -> Unit = { item ->
+        val current = detailPrompt
+        if (current != null) {
+            detailHistory = detailHistory + DetailEntry(current, detailSourceCategory)
+        }
+        detailPrompt = item
+        vm.loadSimilarPrompts(item, detailSourceCategory)
+    }
+
+    val closePromptDetail: () -> Unit = {
+        val previous = detailHistory.lastOrNull()
+        if (previous != null) {
+            detailHistory = detailHistory.dropLast(1)
+            detailPrompt = previous.prompt
+            detailSourceCategory = previous.sourceCategory
+            vm.loadSimilarPrompts(previous.prompt, previous.sourceCategory)
+        } else {
+            detailPrompt = null
+            detailSourceCategory = null
+            vm.clearSimilarPrompts()
+        }
+    }
+
     Box(
         Modifier.fillMaxSize().background(
             Brush.radialGradient(
@@ -220,6 +264,21 @@ private fun PromptAllApp(vm: PromptViewModel) {
         if (showAbout) {
             BackHandler { showAbout = false }
             AboutScreen(onBack = { showAbout = false })
+        } else if (detailPrompt != null) {
+            val activePrompt = requireNotNull(detailPrompt)
+            BackHandler { closePromptDetail() }
+            PromptDetailScreen(
+                item = activePrompt,
+                sourceCategory = detailSourceCategory,
+                favorite = activePrompt.id in state.favoriteIds,
+                similarItems = state.similarPrompts.items,
+                similarLoading = state.similarPrompts.loading,
+                similarError = state.similarPrompts.error,
+                onBack = closePromptDetail,
+                onFavorite = { vm.toggleFavorite(activePrompt) },
+                onRetrySimilar = { vm.loadSimilarPrompts(activePrompt, detailSourceCategory) },
+                onSimilarClick = openSimilarDetail,
+            )
         } else {
             if (selected == 3 && state.categoryFeedSlug != null) {
                 BackHandler { vm.closeCategory() }
@@ -240,6 +299,7 @@ private fun PromptAllApp(vm: PromptViewModel) {
                     onRefresh = vm::refreshHome,
                     onLoadMore = vm::loadMoreHome,
                     onFavorite = vm::toggleFavorite,
+                    onOpenPrompt = { item -> openPromptDetail(item, state.selectedCategory) },
                     onSearchClick = { selected = 1 },
                     newPromptCount = state.newPromptCount,
                     onShowNewPrompts = vm::showNewPrompts,
@@ -274,6 +334,7 @@ private fun PromptAllApp(vm: PromptViewModel) {
                     onRetry = vm::retrySearch,
                     onLoadMore = vm::loadMoreSearch,
                     onFavorite = vm::toggleFavorite,
+                    onOpenPrompt = { item -> openPromptDetail(item, null) },
                 )
 
                 2 -> FeedScreen(
@@ -290,6 +351,7 @@ private fun PromptAllApp(vm: PromptViewModel) {
                     onRefresh = null,
                     onLoadMore = {},
                     onFavorite = vm::toggleFavorite,
+                    onOpenPrompt = { item -> openPromptDetail(item, null) },
                     emptyText = "هنوز پرامپتی ذخیره نکرده‌اید.",
                 )
 
@@ -315,6 +377,7 @@ private fun PromptAllApp(vm: PromptViewModel) {
                             onRefresh = vm::refreshCategory,
                             onLoadMore = vm::loadMoreCategory,
                             onFavorite = vm::toggleFavorite,
+                            onOpenPrompt = { item -> openPromptDetail(item, activeSlug) },
                             onBackClick = vm::closeCategory,
                         )
                     } else {
@@ -328,6 +391,7 @@ private fun PromptAllApp(vm: PromptViewModel) {
                             onRefresh = vm::refreshCategories,
                             onCategoryClick = vm::openCategory,
                             onTrendingClick = { vm.openCategory(PromptViewModel.TRENDING_CATEGORY_SLUG) },
+                            onPromptClick = { item -> openPromptDetail(item, PromptViewModel.TRENDING_CATEGORY_SLUG) },
                             onInfoClick = { showAbout = true },
                         )
                     }
@@ -335,7 +399,7 @@ private fun PromptAllApp(vm: PromptViewModel) {
             }
         }
 
-        if (!showAbout) {
+        if (!showAbout && detailPrompt == null) {
             FloatingBottomBar(
                 tabs = tabs,
                 selected = selected,
@@ -375,6 +439,7 @@ private fun FeedScreen(
     onRefresh: (() -> Unit)?,
     onLoadMore: () -> Unit,
     onFavorite: (PromptDto) -> Unit,
+    onOpenPrompt: (PromptDto) -> Unit = {},
     onSearchClick: (() -> Unit)? = null,
     emptyText: String = "پرامپتی برای نمایش وجود ندارد.",
     newPromptCount: Int = 0,
@@ -406,6 +471,7 @@ private fun FeedScreen(
             onRetry = onRetry,
             onLoadMore = onLoadMore,
             onFavorite = onFavorite,
+            onOpenPrompt = onOpenPrompt,
             onSearchClick = onSearchClick,
             emptyText = emptyText,
             newPromptCount = newPromptCount,
@@ -449,6 +515,7 @@ private fun FeedContent(
     onRetry: () -> Unit,
     onLoadMore: () -> Unit,
     onFavorite: (PromptDto) -> Unit,
+    onOpenPrompt: (PromptDto) -> Unit,
     onSearchClick: (() -> Unit)?,
     emptyText: String,
     newPromptCount: Int,
@@ -525,6 +592,7 @@ private fun FeedContent(
                     homeMode = homeMode,
                     onShowLatest = onShowLatest,
                     onShowRandom = onShowRandom,
+                    onOpenPrompt = onOpenPrompt,
                 )
                 HomeFeedModeLabel(homeMode)
             }
@@ -565,6 +633,7 @@ private fun FeedContent(
                                 item = item,
                                 favorite = item.id in favoriteIds,
                                 onFavorite = { onFavorite(item) },
+                                onOpen = { onOpenPrompt(item) },
                             )
                             if (index == (items.lastIndex - 5).coerceAtLeast(0)) {
                                 LaunchedEffect(items.size) { onLoadMore() }
@@ -593,6 +662,7 @@ private fun FeedContent(
                                 item = item,
                                 favorite = item.id in favoriteIds,
                                 onFavorite = { onFavorite(item) },
+                                onOpen = { onOpenPrompt(item) },
                             )
                             if (index == (items.lastIndex - 3).coerceAtLeast(0)) {
                                 LaunchedEffect(items.size) { onLoadMore() }
@@ -613,6 +683,7 @@ private fun LatestPromptsSection(
     homeMode: HomeFeedMode,
     onShowLatest: () -> Unit,
     onShowRandom: () -> Unit,
+    onOpenPrompt: (PromptDto) -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 8.dp),
@@ -662,14 +733,17 @@ private fun LatestPromptsSection(
             }
         } else {
             items(latestItems, key = { it.id }) { item ->
-                LatestPromptCard(item)
+                LatestPromptCard(item = item, onOpen = { onOpenPrompt(item) })
             }
         }
     }
 }
 
 @Composable
-private fun LatestPromptCard(item: PromptDto) {
+private fun LatestPromptCard(
+    item: PromptDto,
+    onOpen: () -> Unit,
+) {
     val context = LocalContext.current
     var copied by remember(item.id) { mutableStateOf(false) }
 
@@ -681,10 +755,7 @@ private fun LatestPromptCard(item: PromptDto) {
     }
 
     Surface(
-        onClick = {
-            copyPrompt(context, item.promptText)
-            copied = true
-        },
+        onClick = onOpen,
         modifier = Modifier.width(132.dp).height(158.dp),
         shape = RoundedCornerShape(18.dp),
         color = Color(0xFF101116),
@@ -699,6 +770,10 @@ private fun LatestPromptCard(item: PromptDto) {
                     modifier = Modifier.fillMaxSize(),
                 )
                 Surface(
+                    onClick = {
+                        copyPrompt(context, item.promptText)
+                        copied = true
+                    },
                     modifier = Modifier.align(Alignment.BottomStart).padding(7.dp),
                     shape = RoundedCornerShape(50),
                     color = Color(0xC915111F),
@@ -867,6 +942,7 @@ private fun CategoriesScreen(
     onRefresh: () -> Unit,
     onCategoryClick: (String) -> Unit,
     onTrendingClick: () -> Unit,
+    onPromptClick: (PromptDto) -> Unit,
     onInfoClick: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
@@ -955,7 +1031,7 @@ private fun CategoriesScreen(
                                 reverseLayout = true,
                             ) {
                                 items(trendingItems, key = { it.id }) { item ->
-                                    LatestPromptCard(item)
+                                    LatestPromptCard(item = item, onOpen = { onPromptClick(item) })
                                 }
                             }
                         }
@@ -1254,6 +1330,7 @@ private fun SearchScreen(
     onRetry: () -> Unit,
     onLoadMore: () -> Unit,
     onFavorite: (PromptDto) -> Unit,
+    onOpenPrompt: (PromptDto) -> Unit,
 ) {
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         AppHeader("جست‌وجوی پرامپت", "عنوان یا متن دلخواهتان را بنویسید", null)
@@ -1297,6 +1374,7 @@ private fun SearchScreen(
                         item = item,
                         favorite = item.id in favoriteIds,
                         onFavorite = { onFavorite(item) },
+                        onOpen = { onOpenPrompt(item) },
                     )
                     if (index == (items.lastIndex - 3).coerceAtLeast(0)) {
                         LaunchedEffect(items.size) { onLoadMore() }
@@ -1313,6 +1391,7 @@ private fun PromptCard(
     item: PromptDto,
     favorite: Boolean,
     onFavorite: () -> Unit,
+    onOpen: () -> Unit,
 ) {
     val context = LocalContext.current
     var copied by remember(item.id) { mutableStateOf(false) }
@@ -1324,6 +1403,7 @@ private fun PromptCard(
     }
 
     Surface(
+        onClick = onOpen,
         modifier = Modifier.fillMaxWidth().height(180.dp),
         shape = RoundedCornerShape(22.dp),
         color = Color(0xD90D0E12),
@@ -1443,6 +1523,7 @@ private fun GalleryPromptCard(
     item: PromptDto,
     favorite: Boolean,
     onFavorite: () -> Unit,
+    onOpen: () -> Unit,
 ) {
     val context = LocalContext.current
     var copied by remember(item.id) { mutableStateOf(false) }
@@ -1462,6 +1543,7 @@ private fun GalleryPromptCard(
     }
 
     Surface(
+        onClick = onOpen,
         modifier = Modifier.fillMaxWidth().aspectRatio(imageRatio),
         shape = RoundedCornerShape(19.dp),
         color = Color(0xFF111216),
@@ -1530,6 +1612,473 @@ private fun GalleryPromptCard(
                         fontWeight = FontWeight.Bold,
                     )
                 }
+            }
+        }
+    }
+}
+
+private data class AiDestination(
+    val name: String,
+    val subtitle: String,
+    val url: String,
+)
+
+private val AiDestinations = listOf(
+    AiDestination(
+        name = "ChatGPT",
+        subtitle = "ویرایش و استفاده از پرامپت",
+        url = "https://chatgpt.com/",
+    ),
+    AiDestination(
+        name = "Gemini",
+        subtitle = "استفاده در Gemini",
+        url = "https://gemini.google.com/",
+    ),
+    AiDestination(
+        name = "Grok",
+        subtitle = "استفاده در Grok",
+        url = "https://grok.com/",
+    ),
+)
+
+@Composable
+private fun PromptDetailScreen(
+    item: PromptDto,
+    sourceCategory: String?,
+    favorite: Boolean,
+    similarItems: List<PromptDto>,
+    similarLoading: Boolean,
+    similarError: String?,
+    onBack: () -> Unit,
+    onFavorite: () -> Unit,
+    onRetrySimilar: () -> Unit,
+    onSimilarClick: (PromptDto) -> Unit,
+) {
+    val context = LocalContext.current
+    var copied by remember(item.id) { mutableStateOf(false) }
+    val isVideoPrompt = remember(item.id, sourceCategory) {
+        val haystack = "${sourceCategory.orEmpty()} ${item.title}".lowercase()
+        haystack.contains("video") || haystack.contains("ویدئو") || haystack.contains("ویدیو")
+    }
+
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(1_300)
+            copied = false
+        }
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().statusBarsPadding(),
+        contentPadding = PaddingValues(bottom = 34.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
+    ) {
+        item(key = "hero-${item.id}") {
+            Box(
+                modifier = Modifier.fillMaxWidth().height(410.dp),
+            ) {
+                AsyncImage(
+                    model = item.image.url,
+                    contentDescription = item.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                Box(
+                    Modifier.fillMaxSize().background(
+                        Brush.verticalGradient(
+                            listOf(
+                                Color(0x66000000),
+                                Color.Transparent,
+                                Color(0x22000000),
+                                Color(0xF2050608),
+                            )
+                        )
+                    )
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    HeaderCircleButton(
+                        onClick = onBack,
+                        contentDescription = "بازگشت",
+                    ) {
+                        Icon(Icons.Default.ArrowBack, null, Modifier.size(23.dp), tint = Color.White)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    HeaderCircleButton(
+                        onClick = { sharePrompt(context, item) },
+                        contentDescription = "اشتراک‌گذاری پرامپت",
+                    ) {
+                        Icon(Icons.Default.Share, null, Modifier.size(21.dp), tint = Color.White)
+                    }
+                    Spacer(Modifier.width(9.dp))
+                    HeaderCircleButton(
+                        onClick = onFavorite,
+                        contentDescription = if (favorite) "حذف از علاقه‌مندی" else "افزودن به علاقه‌مندی",
+                    ) {
+                        Icon(
+                            if (favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                            null,
+                            Modifier.size(22.dp),
+                            tint = if (favorite) Color(0xFFFF5872) else Color.White,
+                        )
+                    }
+                }
+
+                Column(
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .padding(start = 18.dp, end = 18.dp, bottom = 18.dp),
+                    horizontalAlignment = Alignment.End,
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (isVideoPrompt) {
+                            DetailBadge(text = "ویدئویی", iconVideo = true)
+                            Spacer(Modifier.width(7.dp))
+                        }
+                        DetailBadge(text = "پرامپت آماده")
+                    }
+                    Spacer(Modifier.height(9.dp))
+                    Text(
+                        item.title,
+                        modifier = Modifier.fillMaxWidth(),
+                        color = Color.White,
+                        fontSize = 25.sp,
+                        lineHeight = 33.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        textAlign = TextAlign.Right,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+
+        item(key = "prompt-${item.id}") {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
+            ) {
+                DetailSectionTitle(
+                    title = "متن پرامپت",
+                    subtitle = "برای استفاده سریع، متن کامل را کپی کنید",
+                )
+                Spacer(Modifier.height(10.dp))
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
+                    color = Color(0xE6101116),
+                    border = BorderStroke(1.dp, CardBorder),
+                ) {
+                    Column(Modifier.fillMaxWidth().padding(17.dp)) {
+                        Text(
+                            item.promptText,
+                            modifier = Modifier.fillMaxWidth(),
+                            color = Color(0xFFE3E3E7),
+                            fontSize = 13.sp,
+                            lineHeight = 21.sp,
+                            textAlign = TextAlign.Left,
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        Surface(
+                            onClick = {
+                                copyPrompt(context, item.promptText)
+                                copied = true
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(17.dp),
+                            color = if (copied) Color(0xFF202A23) else Color(0xFF241735),
+                            contentColor = if (copied) Color(0xFF8DDB9D) else PurpleSoft,
+                            border = BorderStroke(
+                                1.dp,
+                                if (copied) Color(0xFF3B6444) else Color(0xFF5A397B),
+                            ),
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 13.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    if (copied) Icons.Default.Check else Icons.Default.ContentCopy,
+                                    null,
+                                    Modifier.size(20.dp),
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    if (copied) "پرامپت کپی شد" else "کپی پرامپت",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        item(key = "ai-${item.id}") {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(top = 17.dp),
+            ) {
+                Column(Modifier.padding(horizontal = 14.dp)) {
+                    DetailSectionTitle(
+                        title = "باز کردن در AI",
+                        subtitle = "پرامپت کپی می‌شود و سرویس انتخابی باز خواهد شد",
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(9.dp),
+                    reverseLayout = true,
+                ) {
+                    items(AiDestinations, key = { it.name }) { destination ->
+                        AiDestinationCard(
+                            destination = destination,
+                            onClick = { openInAi(context, destination, item.promptText) },
+                        )
+                    }
+                }
+            }
+        }
+
+        item(key = "similar-title-${item.id}") {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 25.dp),
+            ) {
+                DetailSectionTitle(
+                    title = "پرامپت‌های مشابه",
+                    subtitle = "چند پیشنهاد نزدیک به همین موضوع",
+                )
+            }
+        }
+
+        item(key = "similar-${item.id}") {
+            when {
+                similarLoading -> {
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(9.dp),
+                        reverseLayout = true,
+                    ) {
+                        items(4) { LatestPromptSkeleton() }
+                    }
+                }
+                similarItems.isNotEmpty() -> {
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                        contentPadding = PaddingValues(horizontal = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(9.dp),
+                        reverseLayout = true,
+                    ) {
+                        items(similarItems, key = { it.id }) { similar ->
+                            SimilarPromptCard(
+                                item = similar,
+                                onClick = { onSimilarClick(similar) },
+                            )
+                        }
+                    }
+                }
+                similarError != null -> {
+                    Surface(
+                        onClick = onRetrySimilar,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                        shape = RoundedCornerShape(18.dp),
+                        color = Color(0xFF101116),
+                        border = BorderStroke(1.dp, CardBorder),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(
+                                "پرامپت مشابه دریافت نشد",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text("برای تلاش دوباره لمس کنید", color = PurpleSoft, fontSize = 11.sp)
+                        }
+                    }
+                }
+                else -> {
+                    Text(
+                        "فعلاً پیشنهاد مشابهی پیدا نشد.",
+                        modifier = Modifier.fillMaxWidth().padding(22.dp),
+                        color = MutedText,
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DetailBadge(
+    text: String,
+    iconVideo: Boolean = false,
+) {
+    Surface(
+        shape = RoundedCornerShape(50),
+        color = Color(0xC51A1326),
+        contentColor = PurpleSoft,
+        border = BorderStroke(1.dp, Color(0x665A397B)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            if (iconVideo) {
+                Icon(Icons.Default.Videocam, null, Modifier.size(14.dp))
+            } else {
+                Icon(Icons.Default.AutoAwesome, null, Modifier.size(14.dp))
+            }
+            Text(text, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun DetailSectionTitle(
+    title: String,
+    subtitle: String,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Surface(
+            modifier = Modifier.size(38.dp),
+            shape = CircleShape,
+            color = Color(0xFF171125),
+            border = BorderStroke(1.dp, Color(0xFF432A64)),
+        ) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.AutoAwesome, null, Modifier.size(17.dp), tint = PurpleSoft)
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                title,
+                color = Color.White,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.ExtraBold,
+                textAlign = TextAlign.Right,
+            )
+            Text(
+                subtitle,
+                color = MutedText,
+                fontSize = 10.sp,
+                lineHeight = 15.sp,
+                textAlign = TextAlign.Right,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AiDestinationCard(
+    destination: AiDestination,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.width(152.dp).height(112.dp),
+        shape = RoundedCornerShape(21.dp),
+        color = Color(0xFF101116),
+        border = BorderStroke(1.dp, CardBorder),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(13.dp),
+            horizontalAlignment = Alignment.End,
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.Default.OpenInNew,
+                    null,
+                    Modifier.size(16.dp),
+                    tint = Color(0xFF777980),
+                )
+                Spacer(Modifier.weight(1f))
+                Surface(
+                    modifier = Modifier.size(34.dp),
+                    shape = CircleShape,
+                    color = Color(0xFF21162F),
+                ) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.SmartToy, null, Modifier.size(18.dp), tint = PurpleSoft)
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                destination.name,
+                color = Color.White,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.ExtraBold,
+                textAlign = TextAlign.Right,
+            )
+            Text(
+                destination.subtitle,
+                color = MutedText,
+                fontSize = 9.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Right,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SimilarPromptCard(
+    item: PromptDto,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.width(148.dp).height(184.dp),
+        shape = RoundedCornerShape(20.dp),
+        color = Color(0xFF101116),
+        border = BorderStroke(1.dp, CardBorder),
+    ) {
+        Column(Modifier.fillMaxSize()) {
+            AsyncImage(
+                model = item.image.url,
+                contentDescription = item.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxWidth().height(128.dp),
+            )
+            Box(
+                modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 10.dp),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Text(
+                    item.title,
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Right,
+                )
             }
         }
     }
@@ -1743,6 +2292,33 @@ private fun InfoRow(label: String, value: String) {
 private fun copyPrompt(context: Context, text: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     clipboard.setPrimaryClip(ClipData.newPlainText("promptAll prompt", text))
+}
+
+private fun openInAi(
+    context: Context,
+    destination: AiDestination,
+    promptText: String,
+) {
+    copyPrompt(context, promptText)
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(destination.url)).apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    runCatching { context.startActivity(intent) }
+}
+
+private fun sharePrompt(context: Context, item: PromptDto) {
+    val shareText = buildString {
+        append(item.title)
+        append("\n\n")
+        append(item.promptText)
+        append("\n\nPromptAll — promptall.ir")
+    }
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_SUBJECT, item.title)
+        putExtra(Intent.EXTRA_TEXT, shareText)
+    }
+    context.startActivity(Intent.createChooser(intent, "اشتراک‌گذاری پرامپت"))
 }
 
 private fun Favorite.toPrompt() = PromptDto(
