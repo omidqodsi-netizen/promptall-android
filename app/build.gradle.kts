@@ -13,9 +13,16 @@ android {
         applicationId = "ir.promptall.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 30800
-        versionName = "3.8.0"
+        versionCode = 30801
+        versionName = "3.8.1"
         vectorDrawables.useSupportLibrary = true
+
+        // PromptAll is distributed to real Android phones. Keeping only ARM ABIs
+        // removes the large x86/x86_64 native ML Kit binaries from the universal APK
+        // without changing image-search behaviour on normal phones.
+        ndk {
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a")
+        }
     }
 
     compileOptions {

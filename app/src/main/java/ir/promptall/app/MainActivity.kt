@@ -32,6 +32,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
@@ -44,6 +46,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -1687,13 +1690,30 @@ private fun ImageSearchAiPanel(
     onOpenPrompt: (PromptDto) -> Unit,
     onCopyPrompt: (String) -> Unit,
 ) {
+    val aiPanelScroll = rememberScrollState()
+
+    LaunchedEffect(showGeneratedPrompt, state.generatedPrompt) {
+        if (showGeneratedPrompt && state.generatedPrompt != null) {
+            // Wait for the generated prompt card to be measured, then reveal it.
+            delay(120)
+            aiPanelScroll.animateScrollTo(aiPanelScroll.maxValue)
+        }
+    }
+
     Surface(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 5.dp),
         shape = RoundedCornerShape(24.dp),
         color = Color(0xE6151120),
         border = BorderStroke(1.dp, Color(0xFF4E3272)),
     ) {
-        Column(Modifier.fillMaxWidth().padding(14.dp), horizontalAlignment = Alignment.End) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 430.dp)
+                .verticalScroll(aiPanelScroll)
+                .padding(14.dp),
+            horizontalAlignment = Alignment.End,
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
@@ -1713,7 +1733,7 @@ private fun ImageSearchAiPanel(
                 when {
                     state.aiSearching -> "در حال تحلیل تصویر و بررسی نتایج با Gemini..."
                     state.aiResults.isNotEmpty() -> "نتایج زیر توسط هوش مصنوعی بررسی شده‌اند. اگر مناسب نیستند، پرامپت خود تصویر را بسازید."
-                    state.generatedPrompt != null -> "هوش مصنوعی نتیجه مطمئنی در دیتابیس پیدا نکرد؛ پرامپت همین تصویر آماده است."
+                    state.generatedPrompt != null -> "هوش مصنوعی نتیجه مطمئنی در دیتابیس پیدا نکرد؛ پرامپت همین تصویر آماده است و در همین کارت قابل اسکرول است."
                     else -> state.aiRetryMessage.ifBlank { "اگر نتایج جستجوی معمولی دقیق نیست، با هوش مصنوعی دوباره بررسی کنید." }
                 },
                 modifier = Modifier.fillMaxWidth(),
