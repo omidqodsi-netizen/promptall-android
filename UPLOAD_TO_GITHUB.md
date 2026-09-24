@@ -22,3 +22,9 @@
 - افزونه PromptAll Image Search 1.3.5+ روی سایت فعال باشد.
 - API Gemini و گزینه جستجوی AI در تنظیمات افزونه فعال باشد.
 - روی یک گوشی واقعی تست کنید: جستجوی عکس، جستجوی AI با VPN، ساخت پرامپت، باز شدن جزئیات، Favorites و Share.
+
+## Important
+- Upload the hidden `.github` folder too; it contains the release workflow.
+- The fixed source includes the missing `CircularProgressIndicator` import that caused GitHub Action run #21 to fail.
+- After uploading, commit to `main`, then open Actions and run **Build promptAll Market Release**.
+- A successful build should create `promptAll-v3.8.0-release.apk` and `promptAll-v3.8.0-release.aab`.
