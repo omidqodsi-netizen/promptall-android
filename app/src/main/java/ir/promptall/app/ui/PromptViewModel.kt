@@ -1,21 +1,36 @@
 package ir.promptall.app.ui
 
 import android.app.Application
+import android.net.Uri
+import android.content.Context
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import ir.promptall.app.BuildConfig
 import ir.promptall.app.PromptAllApplication
+import ir.promptall.app.data.GeminiImageSearchClient
+import ir.promptall.app.data.ImageFingerprint
+import ir.promptall.app.data.ImageLabelAnalyzer
 import ir.promptall.app.data.local.CachedPrompt
 import ir.promptall.app.data.local.Favorite
+import ir.promptall.app.data.remote.ImageSearchAiRequest
+import ir.promptall.app.data.remote.ImageSearchGeneratedPrompt
+import ir.promptall.app.data.remote.ImageSearchItem
+import ir.promptall.app.data.remote.ImageSearchLabel
+import ir.promptall.app.data.remote.ImageSearchRequest
 import ir.promptall.app.data.remote.PromptCategory
 import ir.promptall.app.data.remote.PromptDto
 import ir.promptall.app.data.remote.PromptImage
 import ir.promptall.app.data.remote.PromptPage
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import retrofit2.HttpException
+import java.util.UUID
 
 enum class HomeFeedMode {
     RANDOM,
@@ -30,6 +45,36 @@ data class FeedState(
     val error: String? = null,
     val hasMore: Boolean = true,
     val page: Int = 0,
+)
+
+
+
+data class ImageSearchUiState(
+    val statusLoaded: Boolean = false,
+    val backendAvailable: Boolean = false,
+    val enabled: Boolean = false,
+    val dailyLimit: Int = 3,
+    val used: Int = 0,
+    val remaining: Int = 0,
+    val indexCount: Int = 0,
+    val queueCount: Int = 0,
+    val ready: Boolean = false,
+    val rebuildInProgress: Boolean = false,
+    val rebuildTotal: Int = 0,
+    val searching: Boolean = false,
+    val previewUri: String? = null,
+    val results: List<ImageSearchItem> = emptyList(),
+    val error: String? = null,
+    val aiAvailable: Boolean = false,
+    val aiSearching: Boolean = false,
+    val aiResults: List<ImageSearchItem> = emptyList(),
+    val generatedPrompt: ImageSearchGeneratedPrompt? = null,
+    val aiError: String? = null,
+    val aiClientKey: String = "",
+    val aiModels: List<String> = emptyList(),
+    val aiVpnNote: String = "لطفاً فیلترشکن خود را روشن کنید.",
+    val aiRetryMessage: String = "اگر نتایج دقیق نبود با هوش مصنوعی دوباره بررسی کنید.",
+    val aiButtonLabel: String = "بررسی با هوش مصنوعی",
 )
 
 data class PromptUiState(
@@ -47,6 +92,7 @@ data class PromptUiState(
     val categoryFeed: FeedState = FeedState(),
     val categoryFeedSlug: String? = null,
     val similarPrompts: FeedState = FeedState(hasMore = false),
+    val imageSearch: ImageSearchUiState = ImageSearchUiState(),
 )
 
 class PromptViewModel(application: Application) : AndroidViewModel(application) {
@@ -70,6 +116,8 @@ class PromptViewModel(application: Application) : AndroidViewModel(application) 
     private var similarPromptRequestId: Long? = null
     private var searchDebounceJob: Job? = null
     private var searchRequestJob: Job? = null
+    private var imageSearchJob: Job? = null
+    private var imageAiSearchJob: Job? = null
     private var pendingFirstPage: PromptPage? = null
     private var lastNewPromptCheck = 0L
     private var randomTotalPages = 0
@@ -84,6 +132,7 @@ class PromptViewModel(application: Application) : AndroidViewModel(application) 
         loadCategories()
         loadTrending()
         loadCachedHome()
+        refreshImageSearchStatus()
     }
 
     private fun loadCategories() = viewModelScope.launch {
@@ -708,6 +757,300 @@ class PromptViewModel(application: Application) : AndroidViewModel(application) 
             newPromptCount = 0,
         )
         if (state.value.selectedCategory == null) cacheOfflineItems()
+    }
+
+    private fun installationId(): String {
+        val prefs = getApplication<Application>().getSharedPreferences(
+            "promptall_image_search",
+            Context.MODE_PRIVATE,
+        )
+        val current = prefs.getString("installation_id", null)
+        if (!current.isNullOrBlank()) return current
+        val created = UUID.randomUUID().toString()
+        prefs.edit().putString("installation_id", created).apply()
+        return created
+    }
+
+    fun refreshImageSearchStatus() {
+        viewModelScope.launch {
+            val previous = state.value.imageSearch
+            runCatching { app.api.imageSearchStatus(installationId()) }
+                .onSuccess { response ->
+                    val current = state.value.imageSearch
+                    state.value = state.value.copy(
+                        imageSearch = current.copy(
+                            statusLoaded = true,
+                            backendAvailable = true,
+                            enabled = response.enabled && BuildConfig.VERSION_CODE >= response.minAppVersion,
+                            dailyLimit = response.dailyLimit,
+                            used = response.used,
+                            remaining = response.remaining,
+                            indexCount = response.indexCount,
+                            queueCount = response.queueCount,
+                            ready = response.ready,
+                            rebuildInProgress = response.rebuildInProgress,
+                            rebuildTotal = response.rebuildTotal,
+                            aiAvailable = response.aiFallbackEnabled && response.aiClientDirect && response.aiClientKey.isNotBlank(),
+                            aiClientKey = response.aiClientKey,
+                            aiModels = response.aiModels,
+                            aiVpnNote = response.aiVpnNote.ifBlank { current.aiVpnNote },
+                            aiRetryMessage = response.aiRetryMessage.ifBlank { current.aiRetryMessage },
+                            aiButtonLabel = response.aiButtonLabel.ifBlank { current.aiButtonLabel },
+                            error = if (response.enabled && BuildConfig.VERSION_CODE < response.minAppVersion) {
+                                "برای استفاده از جستجو با تصویر، برنامه را بروزرسانی کنید."
+                            } else if (response.enabled && !response.ready) {
+                                "ایندکس جستجوی تصویر هنوز آماده نشده است."
+                            } else if (current.searching || current.results.isNotEmpty()) current.error else null,
+                        )
+                    )
+                }
+                .onFailure {
+                    val current = state.value.imageSearch
+                    state.value = state.value.copy(
+                        imageSearch = current.copy(
+                            statusLoaded = true,
+                            backendAvailable = false,
+                            enabled = false,
+                            error = if (current.searching || current.results.isNotEmpty()) current.error else null,
+                        )
+                    )
+                }
+        }
+    }
+
+    fun searchByImage(uri: Uri) {
+        imageSearchJob?.cancel()
+        imageSearchJob = viewModelScope.launch {
+            var current = state.value.imageSearch
+
+            // A shared image can arrive immediately after app launch, before the normal
+            // status request finishes. Resolve backend/feature/quota first so a disabled
+            // service never wastes CPU on local image analysis.
+            if (!current.statusLoaded) {
+                val status = runCatching { app.api.imageSearchStatus(installationId()) }.getOrNull()
+                if (status == null) {
+                    state.value = state.value.copy(
+                        imageSearch = current.copy(
+                            statusLoaded = true,
+                            backendAvailable = false,
+                            enabled = false,
+                            previewUri = uri.toString(),
+                            error = "سرویس جستجو با تصویر فعلاً در دسترس نیست.",
+                        )
+                    )
+                    return@launch
+                }
+                current = current.copy(
+                    statusLoaded = true,
+                    backendAvailable = true,
+                    enabled = status.enabled && BuildConfig.VERSION_CODE >= status.minAppVersion,
+                    dailyLimit = status.dailyLimit,
+                    used = status.used,
+                    remaining = status.remaining,
+                    indexCount = status.indexCount,
+                    queueCount = status.queueCount,
+                    ready = status.ready,
+                    rebuildInProgress = status.rebuildInProgress,
+                    rebuildTotal = status.rebuildTotal,
+                    aiAvailable = status.aiFallbackEnabled && status.aiClientDirect && status.aiClientKey.isNotBlank(),
+                    aiClientKey = status.aiClientKey,
+                    aiModels = status.aiModels,
+                    aiVpnNote = status.aiVpnNote.ifBlank { current.aiVpnNote },
+                    aiRetryMessage = status.aiRetryMessage.ifBlank { current.aiRetryMessage },
+                    aiButtonLabel = status.aiButtonLabel.ifBlank { current.aiButtonLabel },
+                    previewUri = uri.toString(),
+                    error = null,
+                )
+                state.value = state.value.copy(imageSearch = current)
+            }
+
+            if (current.backendAvailable && !current.enabled) {
+                state.value = state.value.copy(
+                    imageSearch = current.copy(
+                        previewUri = uri.toString(),
+                        error = "جستجو با تصویر فعلاً از سمت سرور فعال نشده است.",
+                    )
+                )
+                return@launch
+            }
+            if (current.backendAvailable && current.remaining <= 0) {
+                state.value = state.value.copy(
+                    imageSearch = current.copy(
+                        previewUri = uri.toString(),
+                        error = "سهمیه جستجوی تصویری امروز تمام شده است. فردا دوباره امتحان کنید.",
+                    )
+                )
+                return@launch
+            }
+            state.value = state.value.copy(
+                imageSearch = current.copy(
+                    searching = true,
+                    previewUri = uri.toString(),
+                    results = emptyList(),
+                    aiSearching = false,
+                    aiResults = emptyList(),
+                    generatedPrompt = null,
+                    aiError = null,
+                    error = null,
+                )
+            )
+            try {
+                val fingerprint = withContext(Dispatchers.Default) {
+                    ImageFingerprint.fromUri(getApplication(), uri)
+                }
+                val localLabels = runCatching {
+                    ImageLabelAnalyzer.fromUri(getApplication(), uri)
+                }.getOrDefault(emptyList())
+                val response = app.api.imageSearch(
+                    ImageSearchRequest(
+                        installationId = installationId(),
+                        clientVersion = BuildConfig.VERSION_CODE,
+                        phash = fingerprint.phash,
+                        dhash = fingerprint.dhash,
+                        ahash = fingerprint.ahash,
+                        hist = fingerprint.hist,
+                        labels = localLabels.map {
+                            ImageSearchLabel(text = it.text, confidence = it.confidence)
+                        },
+                        clientType = "app",
+                    )
+                )
+                state.value = state.value.copy(
+                    imageSearch = state.value.imageSearch.copy(
+                        statusLoaded = true,
+                        backendAvailable = true,
+                        enabled = true,
+                        dailyLimit = response.dailyLimit,
+                        used = response.used,
+                        remaining = response.remaining,
+                        searching = false,
+                        results = response.items,
+                        error = if (response.items.isEmpty()) {
+                            "پرامپت مشابهی در آرشیو پیدا نشد."
+                        } else null,
+                    )
+                )
+            } catch (e: HttpException) {
+                val quotaReached = e.code() == 429
+                val message = when (e.code()) {
+                    429 -> "سهمیه جستجوی تصویری امروز تمام شده است. فردا دوباره امتحان کنید."
+                    426 -> "برای استفاده از این قابلیت، برنامه را بروزرسانی کنید."
+                    503 -> "جستجو با تصویر فعلاً در دسترس نیست."
+                    else -> "جستجوی تصویر انجام نشد. کمی بعد دوباره امتحان کنید."
+                }
+                state.value = state.value.copy(
+                    imageSearch = state.value.imageSearch.copy(
+                        searching = false,
+                        remaining = if (quotaReached) 0 else state.value.imageSearch.remaining,
+                        error = message,
+                    )
+                )
+            } catch (e: Throwable) {
+                state.value = state.value.copy(
+                    imageSearch = state.value.imageSearch.copy(
+                        searching = false,
+                        error = "خواندن یا جستجوی تصویر انجام نشد. یک تصویر دیگر امتحان کنید.",
+                    )
+                )
+            }
+        }
+    }
+
+    fun searchImageWithAi() {
+        val snapshot = state.value.imageSearch
+        val uriText = snapshot.previewUri ?: return
+        if (!snapshot.aiAvailable || snapshot.aiClientKey.isBlank()) {
+            state.value = state.value.copy(
+                imageSearch = snapshot.copy(aiError = "بررسی هوش مصنوعی از سمت سایت فعال نشده است.")
+            )
+            return
+        }
+
+        imageAiSearchJob?.cancel()
+        imageAiSearchJob = viewModelScope.launch {
+            state.value = state.value.copy(
+                imageSearch = state.value.imageSearch.copy(
+                    aiSearching = true,
+                    aiResults = emptyList(),
+                    generatedPrompt = null,
+                    aiError = null,
+                )
+            )
+            try {
+                val uri = Uri.parse(uriText)
+                val current = state.value.imageSearch
+                val analysis = GeminiImageSearchClient.analyze(
+                    context = getApplication(),
+                    uri = uri,
+                    apiKey = current.aiClientKey,
+                    models = current.aiModels,
+                    vpnNote = current.aiVpnNote,
+                )
+                val response = app.api.imageSearchAiFallback(
+                    ImageSearchAiRequest(
+                        installationId = installationId(),
+                        clientVersion = BuildConfig.VERSION_CODE,
+                        analysisPayload = analysis,
+                    )
+                )
+
+                val verified = if (response.items.isNotEmpty()) {
+                    GeminiImageSearchClient.verify(
+                        context = getApplication(),
+                        uri = uri,
+                        candidates = response.items,
+                        apiKey = current.aiClientKey,
+                        models = current.aiModels,
+                        vpnNote = current.aiVpnNote,
+                    )
+                } else emptyList()
+                val byId = response.items.associateBy { it.id }
+                val verifiedItems = verified.mapNotNull { match ->
+                    byId[match.id]?.copy(
+                        score = match.confidence,
+                        similarityPercent = (match.confidence * 100.0).toInt().coerceIn(0, 100),
+                        matchType = "ai",
+                    )
+                }
+
+                state.value = state.value.copy(
+                    imageSearch = state.value.imageSearch.copy(
+                        aiSearching = false,
+                        aiResults = verifiedItems,
+                        generatedPrompt = response.generatedPrompt,
+                        aiError = if (verifiedItems.isEmpty()) {
+                            "هوش مصنوعی نتیجه مطمئنی در دیتابیس پیدا نکرد؛ می‌توانید پرامپت همین تصویر را بسازید."
+                        } else null,
+                    )
+                )
+            } catch (error: Throwable) {
+                val note = state.value.imageSearch.aiVpnNote
+                state.value = state.value.copy(
+                    imageSearch = state.value.imageSearch.copy(
+                        aiSearching = false,
+                        aiError = error.message?.takeIf { it.isNotBlank() }
+                            ?: "$note اتصال به هوش مصنوعی برقرار نشد.",
+                    )
+                )
+            }
+        }
+    }
+
+    fun clearImageSearch() {
+        imageSearchJob?.cancel()
+        imageAiSearchJob?.cancel()
+        state.value = state.value.copy(
+            imageSearch = state.value.imageSearch.copy(
+                searching = false,
+                previewUri = null,
+                results = emptyList(),
+                aiSearching = false,
+                aiResults = emptyList(),
+                generatedPrompt = null,
+                aiError = null,
+                error = null,
+            )
+        )
     }
 
     fun setQuery(value: String) {

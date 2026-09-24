@@ -4,13 +4,16 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -71,6 +74,8 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.ImageSearch
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.OpenInNew
@@ -128,7 +133,9 @@ import ir.promptall.app.data.local.Favorite
 import ir.promptall.app.data.remote.PromptCategory
 import ir.promptall.app.data.remote.PromptDto
 import ir.promptall.app.data.remote.PromptImage
+import ir.promptall.app.data.remote.ImageSearchGeneratedPrompt
 import ir.promptall.app.ui.HomeFeedMode
+import ir.promptall.app.ui.ImageSearchUiState
 import ir.promptall.app.ui.PromptViewModel
 import ir.promptall.app.ui.theme.PromptAllTheme
 import kotlinx.coroutines.delay
@@ -139,8 +146,11 @@ private val MutedText = Color(0xFF98999F)
 private val CardBorder = Color(0xFF282A30)
 
 class MainActivity : ComponentActivity() {
+    private val sharedImageUri = mutableStateOf<Uri?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        sharedImageUri.value = extractSharedImage(intent)
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
@@ -151,8 +161,28 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             PromptAllTheme {
-                PromptAllApp(viewModel())
+                PromptAllApp(
+                    vm = viewModel(),
+                    sharedImageUri = sharedImageUri.value,
+                    onSharedImageConsumed = { sharedImageUri.value = null },
+                )
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        sharedImageUri.value = extractSharedImage(intent)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun extractSharedImage(intent: Intent?): Uri? {
+        if (intent?.action != Intent.ACTION_SEND || intent.type?.startsWith("image/") != true) return null
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+        } else {
+            intent.getParcelableExtra(Intent.EXTRA_STREAM)
         }
     }
 }
@@ -168,7 +198,11 @@ private data class DetailEntry(
 )
 
 @Composable
-private fun PromptAllApp(vm: PromptViewModel) {
+private fun PromptAllApp(
+    vm: PromptViewModel,
+    sharedImageUri: Uri?,
+    onSharedImageConsumed: () -> Unit,
+) {
     var selected by rememberSaveable { mutableIntStateOf(0) }
     var showAbout by rememberSaveable { mutableStateOf(false) }
     var detailPrompt by remember { mutableStateOf<PromptDto?>(null) }
@@ -194,6 +228,18 @@ private fun PromptAllApp(vm: PromptViewModel) {
         state.latestHome
     }
     val lifecycleOwner = LocalLifecycleOwner.current
+
+    LaunchedEffect(sharedImageUri) {
+        val uri = sharedImageUri ?: return@LaunchedEffect
+        showAbout = false
+        detailPrompt = null
+        detailSourceCategory = null
+        detailHistory = emptyList()
+        selected = 1
+        vm.setQuery("")
+        vm.searchByImage(uri)
+        onSharedImageConsumed()
+    }
 
     LaunchedEffect(state.homeMode) {
         if (homeFeed.items.isNotEmpty()) homeListState.scrollToItem(0)
@@ -340,6 +386,14 @@ private fun PromptAllApp(vm: PromptViewModel) {
                     onLoadMore = vm::loadMoreSearch,
                     onFavorite = vm::toggleFavorite,
                     onOpenPrompt = { item -> openPromptDetail(item, null) },
+                    imageSearch = state.imageSearch,
+                    onSearchImage = { uri ->
+                        vm.setQuery("")
+                        vm.searchByImage(uri)
+                    },
+                    onClearImageSearch = vm::clearImageSearch,
+                    onRefreshImageSearchStatus = vm::refreshImageSearchStatus,
+                    onSearchImageWithAi = vm::searchImageWithAi,
                 )
 
                 2 -> FeedScreen(
@@ -1340,9 +1394,86 @@ private fun SearchScreen(
     onLoadMore: () -> Unit,
     onFavorite: (PromptDto) -> Unit,
     onOpenPrompt: (PromptDto) -> Unit,
+    imageSearch: ImageSearchUiState,
+    onSearchImage: (Uri) -> Unit,
+    onClearImageSearch: () -> Unit,
+    onRefreshImageSearchStatus: () -> Unit,
+    onSearchImageWithAi: () -> Unit,
 ) {
+    val context = LocalContext.current
+    var showGeneratedPrompt by remember(imageSearch.previewUri) { mutableStateOf(false) }
+    LaunchedEffect(imageSearch.generatedPrompt) {
+        if (imageSearch.generatedPrompt != null) showGeneratedPrompt = true
+    }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) onSearchImage(uri)
+    }
+
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        AppHeader("جست‌وجوی پرامپت", "عنوان یا متن دلخواهتان را بنویسید", null)
+        AppHeader("جست‌وجوی پرامپت", "با متن یا تصویر، پرامپت مناسب را پیدا کنید", null)
+
+        ImageSearchPanel(
+            state = imageSearch,
+            onPickImage = { picker.launch("image/*") },
+            onClear = onClearImageSearch,
+            onRefreshStatus = onRefreshImageSearchStatus,
+        )
+
+        if (imageSearch.previewUri != null && imageSearch.aiAvailable) {
+            ImageSearchAiPanel(
+                state = imageSearch,
+                favoriteIds = favoriteIds,
+                showGeneratedPrompt = showGeneratedPrompt,
+                onRunAi = {
+                    showGeneratedPrompt = false
+                    onSearchImageWithAi()
+                },
+                onShowGeneratedPrompt = { showGeneratedPrompt = true },
+                onFavorite = onFavorite,
+                onOpenPrompt = onOpenPrompt,
+                onCopyPrompt = { copyPrompt(context, it) },
+            )
+        }
+
+        if (imageSearch.results.isNotEmpty()) {
+            Column(Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "نتایج مشابه",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                    )
+                    Text(
+                        "${imageSearch.results.size} نتیجه",
+                        color = MutedText,
+                        fontSize = 10.sp,
+                    )
+                }
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(9.dp),
+                    reverseLayout = true,
+                ) {
+                    items(imageSearch.results, key = { it.id }) { result ->
+                        ImageSearchResultCard(
+                            item = result.toPrompt(),
+                            similarity = result.similarityPercent,
+                            matchType = result.matchType,
+                            favorite = result.id in favoriteIds,
+                            onFavorite = { onFavorite(result.toPrompt()) },
+                            onOpen = { onOpenPrompt(result.toPrompt()) },
+                        )
+                    }
+                }
+            }
+        }
+
         OutlinedTextField(
             value = query,
             onValueChange = onQueryChange,
@@ -1363,7 +1494,13 @@ private fun SearchScreen(
             query.isBlank() -> Box(
                 Modifier.fillMaxWidth().weight(1f).padding(bottom = 110.dp),
                 contentAlignment = Alignment.Center,
-            ) { Text("برای شروع جست‌وجو چیزی بنویسید", color = MutedText) }
+            ) {
+                Text(
+                    if (imageSearch.results.isEmpty()) "برای جست‌وجوی متنی چیزی بنویسید" else "برای دیدن جزئیات، یکی از نتایج بالا را انتخاب کنید",
+                    color = MutedText,
+                    fontSize = 12.sp,
+                )
+            }
             loading -> PromptSkeletonList(Modifier.weight(1f))
             error != null && items.isEmpty() -> ErrorState(
                 error, onRetry, Modifier.fillMaxWidth().weight(1f)
@@ -1390,6 +1527,435 @@ private fun SearchScreen(
                     }
                 }
                 if (loadingMore) item { PromptSkeletonCard() }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ImageSearchPanel(
+    state: ImageSearchUiState,
+    onPickImage: () -> Unit,
+    onClear: () -> Unit,
+    onRefreshStatus: () -> Unit,
+) {
+    val canSearch = !state.searching &&
+        (!state.statusLoaded || !state.backendAvailable || state.enabled) &&
+        (!state.backendAvailable || state.remaining > 0)
+
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(24.dp),
+        color = Color(0xE6111017),
+        border = BorderStroke(1.dp, Color(0xFF3A2851)),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Surface(
+                    modifier = Modifier.size(76.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    color = Color(0xFF17111F),
+                    border = BorderStroke(1.dp, Color(0xFF4B2F68)),
+                ) {
+                    if (state.previewUri != null) {
+                        Box(Modifier.fillMaxSize()) {
+                            AsyncImage(
+                                model = state.previewUri,
+                                contentDescription = "تصویر انتخاب‌شده",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                            Surface(
+                                onClick = onClear,
+                                modifier = Modifier.align(Alignment.TopStart).padding(5.dp).size(25.dp),
+                                shape = CircleShape,
+                                color = Color(0xCC050608),
+                            ) {
+                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Default.Close, null, Modifier.size(15.dp), tint = Color.White)
+                                }
+                            }
+                        }
+                    } else {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.ImageSearch, null, Modifier.size(34.dp), tint = PurpleSoft)
+                        }
+                    }
+                }
+
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Default.AutoAwesome, null, Modifier.size(18.dp), tint = PurpleSoft)
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "یافتن پرامپت با تصویر",
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            textAlign = TextAlign.Right,
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "عکس را انتخاب کنید یا از برنامه‌های دیگر برای PromptAll بفرستید",
+                        modifier = Modifier.fillMaxWidth(),
+                        color = MutedText,
+                        fontSize = 10.sp,
+                        lineHeight = 15.sp,
+                        textAlign = TextAlign.Right,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Surface(
+                        modifier = Modifier.clickable(enabled = canSearch, onClick = onPickImage),
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (canSearch) Color(0xFF2A1640) else Color(0xFF17171B),
+                        contentColor = if (canSearch) PurpleSoft else Color(0xFF6C6D73),
+                        border = BorderStroke(1.dp, if (canSearch) Color(0xFF623A88) else CardBorder),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(7.dp),
+                        ) {
+                            Icon(Icons.Default.ImageSearch, null, Modifier.size(17.dp))
+                            Text(
+                                if (state.searching) "در حال جستجو..." else "انتخاب تصویر",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    when {
+                        !state.statusLoaded -> "در حال بررسی سرویس..."
+                        state.backendAvailable && state.enabled -> "${state.remaining} از ${state.dailyLimit} جستجو باقی مانده"
+                        state.backendAvailable && !state.enabled -> "جستجو با تصویر فعلاً غیرفعال است"
+                        else -> "وضعیت سرویس در دسترس نیست"
+                    },
+                    color = if (state.backendAvailable && state.enabled) PurpleSoft else MutedText,
+                    fontSize = 10.sp,
+                    modifier = Modifier.clickable(enabled = !state.searching, onClick = onRefreshStatus),
+                )
+                Text(
+                    "جستجوی عادی خصوصی؛ AI فقط با انتخاب شما",
+                    color = Color(0xFF777980),
+                    fontSize = 9.sp,
+                )
+            }
+
+            if (state.error != null) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    state.error,
+                    modifier = Modifier.fillMaxWidth(),
+                    color = if (state.remaining <= 0 && state.backendAvailable) Color(0xFFFFB66F) else Color(0xFFFF8B9A),
+                    fontSize = 10.sp,
+                    lineHeight = 15.sp,
+                    textAlign = TextAlign.Right,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ImageSearchAiPanel(
+    state: ImageSearchUiState,
+    favoriteIds: Set<Long>,
+    showGeneratedPrompt: Boolean,
+    onRunAi: () -> Unit,
+    onShowGeneratedPrompt: () -> Unit,
+    onFavorite: (PromptDto) -> Unit,
+    onOpenPrompt: (PromptDto) -> Unit,
+    onCopyPrompt: (String) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 5.dp),
+        shape = RoundedCornerShape(24.dp),
+        color = Color(0xE6151120),
+        border = BorderStroke(1.dp, Color(0xFF4E3272)),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(14.dp), horizontalAlignment = Alignment.End) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Default.AutoAwesome, null, Modifier.size(18.dp), tint = PurpleSoft)
+                Spacer(Modifier.width(7.dp))
+                Text(
+                    "بررسی با هوش مصنوعی",
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                )
+            }
+            Spacer(Modifier.height(5.dp))
+            Text(
+                when {
+                    state.aiSearching -> "در حال تحلیل تصویر و بررسی نتایج با Gemini..."
+                    state.aiResults.isNotEmpty() -> "نتایج زیر توسط هوش مصنوعی بررسی شده‌اند. اگر مناسب نیستند، پرامپت خود تصویر را بسازید."
+                    state.generatedPrompt != null -> "هوش مصنوعی نتیجه مطمئنی در دیتابیس پیدا نکرد؛ پرامپت همین تصویر آماده است."
+                    else -> state.aiRetryMessage.ifBlank { "اگر نتایج جستجوی معمولی دقیق نیست، با هوش مصنوعی دوباره بررسی کنید." }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                color = MutedText,
+                fontSize = 10.sp,
+                lineHeight = 16.sp,
+                textAlign = TextAlign.Right,
+            )
+            Spacer(Modifier.height(10.dp))
+
+            if (state.aiSearching) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("ممکن است چند ثانیه طول بکشد", color = MutedText, fontSize = 10.sp)
+                    Spacer(Modifier.width(10.dp))
+                    CircularProgressIndicator(Modifier.size(22.dp), color = PurpleSoft, strokeWidth = 2.dp)
+                }
+            } else {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().clickable(onClick = onRunAi),
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color(0xFF2A1640),
+                    border = BorderStroke(1.dp, Color(0xFF6D4494)),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Default.AutoAwesome, null, Modifier.size(18.dp), tint = PurpleSoft)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            state.aiButtonLabel.ifBlank { "بررسی با هوش مصنوعی" },
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                        )
+                    }
+                }
+            }
+
+            if (state.aiVpnNote.isNotBlank()) {
+                Spacer(Modifier.height(7.dp))
+                Text(
+                    "${state.aiVpnNote} درخواست Gemini مستقیماً از گوشی شما ارسال می‌شود.",
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Color(0xFF9B91AD),
+                    fontSize = 9.sp,
+                    textAlign = TextAlign.Right,
+                )
+            }
+
+            if (state.aiError != null) {
+                Spacer(Modifier.height(9.dp))
+                Text(
+                    state.aiError,
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Color(0xFFFFB47B),
+                    fontSize = 10.sp,
+                    lineHeight = 15.sp,
+                    textAlign = TextAlign.Right,
+                )
+            }
+
+            if (state.generatedPrompt != null) {
+                Spacer(Modifier.height(11.dp))
+                Surface(
+                    modifier = Modifier.fillMaxWidth().clickable(onClick = onShowGeneratedPrompt),
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color(0xFF15302A),
+                    border = BorderStroke(1.dp, Color(0xFF2D6B5A)),
+                ) {
+                    Text(
+                        if (showGeneratedPrompt) "پرامپت این تصویر آماده است" else "ساخت / نمایش پرامپت همین تصویر",
+                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                        color = Color(0xFFB9F7DE),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+
+            if (showGeneratedPrompt && state.generatedPrompt != null) {
+                Spacer(Modifier.height(10.dp))
+                GeneratedImagePromptCard(state.generatedPrompt, onCopyPrompt)
+            }
+
+            if (state.aiResults.isNotEmpty()) {
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "نتایج تاییدشده هوش مصنوعی",
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    textAlign = TextAlign.Right,
+                )
+                Spacer(Modifier.height(8.dp))
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(9.dp),
+                    reverseLayout = true,
+                ) {
+                    items(state.aiResults, key = { "ai-${it.id}" }) { result ->
+                        ImageSearchResultCard(
+                            item = result.toPrompt(),
+                            similarity = result.similarityPercent,
+                            matchType = "ai",
+                            favorite = result.id in favoriteIds,
+                            onFavorite = { onFavorite(result.toPrompt()) },
+                            onOpen = { onOpenPrompt(result.toPrompt()) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GeneratedImagePromptCard(
+    prompt: ImageSearchGeneratedPrompt,
+    onCopyPrompt: (String) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = Color(0xFF101A18),
+        border = BorderStroke(1.dp, Color(0xFF285548)),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(13.dp), horizontalAlignment = Alignment.End) {
+            Text(
+                "پرامپت این تصویر با هوش مصنوعی ساخته شد",
+                color = Color(0xFFB9F7DE),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.ExtraBold,
+            )
+            if (prompt.persian.isNotBlank()) {
+                Spacer(Modifier.height(9.dp))
+                Text(prompt.persian, modifier = Modifier.fillMaxWidth(), color = Color.White, fontSize = 11.sp, lineHeight = 18.sp, textAlign = TextAlign.Right)
+                Spacer(Modifier.height(8.dp))
+                Surface(
+                    modifier = Modifier.clickable { onCopyPrompt(prompt.persian) },
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFF1D2C28),
+                ) {
+                    Text("کپی پرامپت فارسی", Modifier.padding(horizontal = 11.dp, vertical = 8.dp), color = Color(0xFFB9F7DE), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            if (prompt.english.isNotBlank()) {
+                Spacer(Modifier.height(11.dp))
+                Text(prompt.english, modifier = Modifier.fillMaxWidth(), color = Color(0xFFE5E7EB), fontSize = 11.sp, lineHeight = 18.sp, textAlign = TextAlign.Left)
+                Spacer(Modifier.height(8.dp))
+                Surface(
+                    modifier = Modifier.clickable { onCopyPrompt(prompt.english) },
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFF1D2C28),
+                ) {
+                    Text("کپی پرامپت انگلیسی", Modifier.padding(horizontal = 11.dp, vertical = 8.dp), color = Color(0xFFB9F7DE), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ImageSearchResultCard(
+    item: PromptDto,
+    similarity: Int,
+    matchType: String,
+    favorite: Boolean,
+    onFavorite: () -> Unit,
+    onOpen: () -> Unit,
+) {
+    val label = when (matchType) {
+        "same" -> "همان تصویر"
+        "near" -> "بسیار نزدیک"
+        "ai" -> "پیشنهاد هوش مصنوعی"
+        else -> "مشابه"
+    }
+    Surface(
+        onClick = onOpen,
+        modifier = Modifier.width(154.dp),
+        shape = RoundedCornerShape(18.dp),
+        color = Color(0xFF101116),
+        border = BorderStroke(1.dp, CardBorder),
+    ) {
+        Column {
+            Box(Modifier.fillMaxWidth().height(124.dp)) {
+                AsyncImage(
+                    model = item.image.url,
+                    contentDescription = item.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                Surface(
+                    modifier = Modifier.align(Alignment.TopEnd).padding(7.dp),
+                    shape = RoundedCornerShape(50),
+                    color = Color(0xDE0A0A0D),
+                    border = BorderStroke(1.dp, Color(0xFF4E3467)),
+                ) {
+                    Text(
+                        "$similarity%",
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        color = PurpleSoft,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                    )
+                }
+                Surface(
+                    onClick = onFavorite,
+                    modifier = Modifier.align(Alignment.TopStart).padding(7.dp).size(28.dp),
+                    shape = CircleShape,
+                    color = Color(0xD90A0A0D),
+                ) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            if (favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                            null,
+                            Modifier.size(16.dp),
+                            tint = if (favorite) Color(0xFFFF5872) else Color.White,
+                        )
+                    }
+                }
+            }
+            Column(Modifier.padding(10.dp)) {
+                Text(label, color = PurpleSoft, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    item.title,
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Right,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }

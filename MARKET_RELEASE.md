@@ -1,33 +1,42 @@
-# promptAll 3.6.0 — Market release
+# PromptAll 3.8.0 — Market release
 
-This project builds a signed APK and AAB that can update the existing PromptAll Android listing, provided the same signing key is used.
+این پروژه نسخه کامل Android برای انتشار PromptAll 3.8.0 است و با همان applicationId و کلید امضای نسخه منتشرشده در بازار ساخته می‌شود.
 
-## Current release highlights
+## نسخه
 
-- Category discovery and Trending flow from v3.5 remain intact.
-- Prompt cards now open a dedicated full-screen detail experience.
-- Detail view includes hero image, full prompt, Copy, Favorite and Share.
-- Similar prompts are loaded independently without changing the current Home/category feed.
-- "Open in AI" copies the prompt and opens ChatGPT, Gemini or Grok through public HTTPS app/web links.
-- Navigating through similar prompts keeps a local detail history so Back returns naturally.
+- `versionName = 3.8.0`
+- `versionCode = 30800`
+- `applicationId = ir.promptall.app`
 
-## GitHub signing setup
+## قابلیت‌های اصلی این نسخه
 
-Repository Actions must have these four secrets configured with the same release key used for the already published app:
+- جستجوی پرامپت با عکس داخل UI نیتیو اپ
+- انتخاب عکس از گالری و Share مستقیم عکس از برنامه‌های دیگر به PromptAll
+- جستجوی عادی Privacy-first با pHash / dHash / aHash / histogram و ML Kit
+- نمایش نتایج جستجوی معمولی بدون ارسال فایل خام عکس به PromptAll
+- کارت واضح «بررسی با هوش مصنوعی» حتی اگر جستجوی عادی نتیجه داشته باشد
+- اتصال مستقیم گوشی کاربر به Gemini تا مسیر شبکه/VPN خود کاربر استفاده شود
+- fallback خودکار بین چند مدل Gemini اگر مدل اول جواب ندهد
+- بررسی دوباره کاندیدهای AI با خود تصویر برای کاهش نتیجه‌های بی‌ربط
+- در صورت نبود نتیجه مطمئن: ساخت پرامپت فارسی و انگلیسی همان تصویر
+- نمایش خودکار پرامپت ساخته‌شده در همان پنل AI و امکان Copy
+- حفظ Categories، Trending، Video Prompts، Favorites، Prompt Detail، Similar Prompts و Open in AI
+
+## افزونه مورد نیاز سایت
+
+PromptAll Image Search `1.3.5` یا جدیدتر باید روی سایت فعال باشد تا تنظیمات AI برای Android از endpoint وضعیت دریافت شود.
+
+## GitHub Actions
+
+Workflow موجود پروژه خروجی‌های نسخه‌ای می‌سازد:
+
+- `promptAll-v3.8.0-release.apk`
+- `promptAll-v3.8.0-release.aab`
+- `mapping-v3.8.0.txt`
+
+برای اینکه APK/AAB بتواند نسخه فعلی بازار را Update کند، همان Secrets و کلید امضای نسخه منتشرشده قبلی باید استفاده شوند:
 
 - `PROMPTALL_KEYSTORE_BASE64`
 - `PROMPTALL_STORE_PASSWORD`
 - `PROMPTALL_KEY_ALIAS`
 - `PROMPTALL_KEY_PASSWORD`
-
-Never commit the keystore, passwords, or Base64 value to the repository.
-
-## Build
-
-Every push to `main`, or a manual workflow run, creates versioned files based on `versionName` in `app/build.gradle.kts`:
-
-- `promptAll-v3.6.0-release.apk`
-- `promptAll-v3.6.0-release.aab`
-- `mapping-v3.6.0.txt`
-
-Download them from the successful GitHub Actions run under `promptAll-v3.6.0-release`.
