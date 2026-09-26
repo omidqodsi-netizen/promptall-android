@@ -13,8 +13,8 @@ android {
         applicationId = "ir.promptall.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 30802
-        versionName = "3.8.2"
+        versionCode = 30803
+        versionName = "3.8.3"
         vectorDrawables.useSupportLibrary = true
 
         // PromptAll is distributed to real Android phones. Keeping only ARM ABIs
@@ -68,6 +68,10 @@ android {
         buildConfig = true
     }
     packaging.resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+    // Keep release APK smaller by removing unused locale resources from dependencies.
+    androidResources {
+        localeFilters += listOf("fa", "en")
+    }
 }
 
 kotlin {
