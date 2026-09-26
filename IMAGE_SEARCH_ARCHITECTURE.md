@@ -40,3 +40,10 @@ There is no cloud AI request and no server-side model inference. This keeps the 
 
 ## Compatibility contract
 The existing `promptall/v1` endpoints are not modified. The WordPress feature can be installed, indexed and kept disabled before Android v3.7.0 is released. Older app versions never call the new namespace and continue to work normally.
+
+
+## Android 3.8.2 exact-match parity
+
+The Android client sends `client_type=web` for the fingerprint search endpoint intentionally. The backend web profile contains the browser/device tolerant rescue thresholds that are required because Android Bitmap scaling and browser Canvas/GD scaling can differ by a few hash bits even for the same source image. This does not upload the raw image and does not change the quota model.
+
+Android also normalizes EXIF orientation before fingerprinting so gallery/camera images match the visual orientation used by browsers.

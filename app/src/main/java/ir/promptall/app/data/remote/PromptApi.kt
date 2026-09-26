@@ -74,7 +74,7 @@ data class ImageSearchRequest(
     val ahash: String,
     val hist: List<Int>,
     val labels: List<ImageSearchLabel> = emptyList(),
-    @SerializedName("client_type") val clientType: String = "app",
+    @SerializedName("client_type") val clientType: String = "web",
 )
 
 data class ImageSearchItem(

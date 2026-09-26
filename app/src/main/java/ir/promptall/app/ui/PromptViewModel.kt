@@ -912,7 +912,7 @@ class PromptViewModel(application: Application) : AndroidViewModel(application) 
                         labels = localLabels.map {
                             ImageSearchLabel(text = it.text, confidence = it.confidence)
                         },
-                        clientType = "app",
+                        clientType = "web",
                     )
                 )
                 state.value = state.value.copy(
