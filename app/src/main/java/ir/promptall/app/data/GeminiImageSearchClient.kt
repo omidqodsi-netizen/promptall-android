@@ -169,7 +169,7 @@ object GeminiImageSearchClient {
             }
         }
         val prefix = vpnNote.trim().takeIf { it.isNotEmpty() }?.let { "$it " }.orEmpty()
-        throw IllegalStateException(prefix + " پاسخ از هوش مصنوعی دریافت نشد. ممکن است سهمیه امروز تمام شده باشد یا اتصال برقرار نباشد. از جستجوی معمولی سایت استفاده کنید.")
+        throw IllegalStateException(prefix + "اتصال به Gemini برقرار نشد. " + lastError)
     }
 
     private fun callModel(
@@ -200,11 +200,7 @@ object GeminiImageSearchClient {
                 val message = runCatching {
                     gson.fromJson(body, JsonObject::class.java)?.getAsJsonObject("error")?.get("message")?.asString
                 }.getOrNull()
-                throw IllegalStateException(message ?: when (response.code) {
-                    429 -> "تعداد درخواست‌های هوش مصنوعی امروز به پایان رسیده است."
-                    401, 403 -> "دسترسی به هوش مصنوعی امکان‌پذیر نیست."
-                    else -> "پاسخ هوش مصنوعی دریافت نشد."
-                })
+                throw IllegalStateException(message ?: "Gemini HTTP ${response.code}")
             }
             return extractCandidateText(body)
         }

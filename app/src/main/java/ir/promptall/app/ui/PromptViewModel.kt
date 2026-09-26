@@ -1025,23 +1025,11 @@ class PromptViewModel(application: Application) : AndroidViewModel(application) 
                 )
             } catch (error: Throwable) {
                 val note = state.value.imageSearch.aiVpnNote
-                val raw = error.message.orEmpty().lowercase()
-                val friendly = when {
-                    raw.contains("quota") || raw.contains("limit") || raw.contains("429") || raw.contains("resource_exhausted") ->
-                        "تعداد درخواست‌های هوش مصنوعی امروز به پایان رسیده است. لطفاً از جستجوی معمولی سایت استفاده کنید."
-                    raw.contains("401") || raw.contains("403") || raw.contains("api") || raw.contains("key") ->
-                        "دسترسی هوش مصنوعی برقرار نشد. ممکن است کلید سرویس یا دسترسی آن مشکل داشته باشد."
-                    raw.contains("timeout") || raw.contains("failed") || raw.contains("unable") ->
-                        "پاسخی از هوش مصنوعی دریافت نشد. لطفاً فیلترشکن و اتصال اینترنت خود را بررسی کنید."
-                    else ->
-                        "${note.ifBlank { "برای استفاده از جستجوی هوشمند، لطفاً فیلترشکن خود را روشن کنید." }}
-
-هوش مصنوعی در حال حاضر پاسخ مناسب نداد؛ لطفاً جستجوی معمولی سایت را امتحان کنید."
-                }
                 state.value = state.value.copy(
                     imageSearch = state.value.imageSearch.copy(
                         aiSearching = false,
-                        aiError = friendly,
+                        aiError = error.message?.takeIf { it.isNotBlank() }
+                            ?: "$note اتصال به هوش مصنوعی برقرار نشد.",
                     )
                 )
             }
