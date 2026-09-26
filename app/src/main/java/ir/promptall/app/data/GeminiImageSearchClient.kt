@@ -151,6 +151,11 @@ object GeminiImageSearchClient {
         return (models + defaults).map { it.trim() }.filter { it.isNotEmpty() }.distinct()
     }
 
+    private data class GeminiAttemptError(
+        val code: Int?,
+        val message: String,
+    )
+
     private fun callWithFallback(
         apiKey: String,
         models: List<String>,
@@ -159,18 +164,53 @@ object GeminiImageSearchClient {
         imageBase64: String,
         vpnNote: String,
     ): String {
-        if (apiKey.isBlank()) throw IllegalStateException("کلید Gemini در تنظیمات سایت ثبت نشده است.")
-        var lastError = ""
+        if (apiKey.isBlank()) {
+            throw IllegalStateException("جستجوی هوش مصنوعی موقتاً در دسترس نیست. لطفاً از جستجوی معمولی سایت استفاده کنید.")
+        }
+
+        val errors = mutableListOf<GeminiAttemptError>()
         models.forEach { model ->
             try {
                 return callModel(apiKey, model, instruction, imageMime, imageBase64)
+            } catch (error: GeminiHttpException) {
+                errors += GeminiAttemptError(error.code, error.serverMessage)
             } catch (error: Throwable) {
-                lastError = error.message.orEmpty()
+                errors += GeminiAttemptError(null, error.message.orEmpty())
             }
         }
+
+        val allMessages = errors.joinToString(" ") { it.message }.lowercase()
+        val quotaReached = errors.any { it.code == 429 } ||
+            allMessages.contains("resource_exhausted") ||
+            allMessages.contains("quota") ||
+            allMessages.contains("rate limit")
+        if (quotaReached) {
+            throw IllegalStateException(
+                "تعداد درخواست‌های هوش مصنوعی امروز کاربران زیاد بوده و سهمیه فعلی تکمیل شده است. لطفاً از جستجوی معمولی سایت استفاده کنید."
+            )
+        }
+
+        val accessBlocked = errors.any { it.code == 403 || it.code == 401 } ||
+            allMessages.contains("region") ||
+            allMessages.contains("location") ||
+            allMessages.contains("permission denied") ||
+            allMessages.contains("forbidden")
+        if (accessBlocked) {
+            throw IllegalStateException(
+                "اتصال به سرویس هوش مصنوعی برقرار نشد. لطفاً فیلترشکن خود را روشن کنید و دوباره تلاش کنید."
+            )
+        }
+
         val prefix = vpnNote.trim().takeIf { it.isNotEmpty() }?.let { "$it " }.orEmpty()
-        throw IllegalStateException(prefix + "اتصال به Gemini برقرار نشد. " + lastError)
+        throw IllegalStateException(
+            prefix + "پاسخی از هوش مصنوعی دریافت نشد. لطفاً اتصال اینترنت و فیلترشکن را بررسی کنید یا از جستجوی معمولی سایت استفاده کنید."
+        )
     }
+
+    private class GeminiHttpException(
+        val code: Int,
+        val serverMessage: String,
+    ) : IllegalStateException(serverMessage)
 
     private fun callModel(
         apiKey: String,
@@ -200,7 +240,10 @@ object GeminiImageSearchClient {
                 val message = runCatching {
                     gson.fromJson(body, JsonObject::class.java)?.getAsJsonObject("error")?.get("message")?.asString
                 }.getOrNull()
-                throw IllegalStateException(message ?: "Gemini HTTP ${response.code}")
+                throw GeminiHttpException(
+                    code = response.code,
+                    serverMessage = message ?: "Gemini HTTP ${response.code}",
+                )
             }
             return extractCandidateText(body)
         }

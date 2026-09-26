@@ -13,13 +13,12 @@ android {
         applicationId = "ir.promptall.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 30802
-        versionName = "3.8.2"
+        versionCode = 30803
+        versionName = "3.8.3"
         vectorDrawables.useSupportLibrary = true
 
-        // PromptAll is distributed to real Android phones. Keeping only ARM ABIs
-        // removes the large x86/x86_64 native ML Kit binaries from the universal APK
-        // without changing image-search behaviour on normal phones.
+        // PromptAll is distributed to real Android phones. Keep the release focused
+        // on ARM devices used by the store audience and avoid unnecessary native ABIs.
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a")
         }
@@ -94,7 +93,6 @@ dependencies {
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("io.coil-kt.coil3:coil-compose:3.2.0")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.2.0")
-    implementation("com.google.mlkit:image-labeling:17.0.9")
 
     implementation("androidx.room:room-runtime:2.7.1")
     implementation("androidx.room:room-ktx:2.7.1")

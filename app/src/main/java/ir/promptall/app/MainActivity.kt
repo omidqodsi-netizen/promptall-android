@@ -1744,6 +1744,26 @@ private fun ImageSearchAiPanel(
             )
             Spacer(Modifier.height(10.dp))
 
+            if (!state.aiSearching) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = Color(0xFF261B12),
+                    border = BorderStroke(1.dp, Color(0xFF6F542C)),
+                ) {
+                    Text(
+                        "قبل از استفاده از جستجوی هوش مصنوعی، لطفاً فیلترشکن خود را روشن کنید.",
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                        color = Color(0xFFFFD39A),
+                        fontSize = 10.sp,
+                        lineHeight = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Right,
+                    )
+                }
+                Spacer(Modifier.height(9.dp))
+            }
+
             if (state.aiSearching) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),

@@ -1023,13 +1023,30 @@ class PromptViewModel(application: Application) : AndroidViewModel(application) 
                         } else null,
                     )
                 )
-            } catch (error: Throwable) {
-                val note = state.value.imageSearch.aiVpnNote
+            } catch (error: HttpException) {
+                val message = when (error.code()) {
+                    429 -> "تعداد درخواست‌های هوش مصنوعی امروز کاربران زیاد بوده و سهمیه فعلی تکمیل شده است. لطفاً از جستجوی معمولی سایت استفاده کنید."
+                    401, 403 -> "اتصال به سرویس هوش مصنوعی برقرار نشد. لطفاً فیلترشکن خود را روشن کنید و دوباره تلاش کنید."
+                    500, 502, 503, 504 -> "سرویس هوش مصنوعی موقتاً پاسخگو نیست. لطفاً کمی بعد دوباره تلاش کنید یا از جستجوی معمولی سایت استفاده کنید."
+                    else -> "جستجوی هوش مصنوعی انجام نشد. لطفاً دوباره تلاش کنید یا از جستجوی معمولی سایت استفاده کنید."
+                }
                 state.value = state.value.copy(
                     imageSearch = state.value.imageSearch.copy(
                         aiSearching = false,
-                        aiError = error.message?.takeIf { it.isNotBlank() }
-                            ?: "$note اتصال به هوش مصنوعی برقرار نشد.",
+                        aiError = message,
+                    )
+                )
+            } catch (error: Throwable) {
+                val raw = error.message.orEmpty().trim()
+                val message = if (raw.isNotBlank() && raw.any { ch -> ch.code in 0x0600..0x06FF }) {
+                    raw
+                } else {
+                    "پاسخی از هوش مصنوعی دریافت نشد. لطفاً اتصال اینترنت و فیلترشکن را بررسی کنید یا از جستجوی معمولی سایت استفاده کنید."
+                }
+                state.value = state.value.copy(
+                    imageSearch = state.value.imageSearch.copy(
+                        aiSearching = false,
+                        aiError = message,
                     )
                 )
             }
