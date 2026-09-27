@@ -80,13 +80,11 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.LocalFireDepartment
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SmartToy
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.ViewAgenda
 import androidx.compose.material.icons.filled.GridView
@@ -208,6 +206,7 @@ private fun PromptAllApp(
     onSharedImageConsumed: () -> Unit,
 ) {
     var selected by rememberSaveable { mutableIntStateOf(0) }
+    var searchImageFirst by rememberSaveable { mutableStateOf(false) }
     var showAbout by rememberSaveable { mutableStateOf(false) }
     var detailPrompt by remember { mutableStateOf<PromptDto?>(null) }
     var detailSourceCategory by remember { mutableStateOf<String?>(null) }
@@ -239,6 +238,7 @@ private fun PromptAllApp(
         detailPrompt = null
         detailSourceCategory = null
         detailHistory = emptyList()
+        searchImageFirst = true
         selected = 1
         vm.setQuery("")
         vm.searchByImage(uri)
@@ -309,9 +309,13 @@ private fun PromptAllApp(
     Box(
         Modifier.fillMaxSize().background(
             Brush.radialGradient(
-                colors = listOf(Color(0xFF111118), Color(0xFF050608)),
-                center = Offset(950f, 80f),
-                radius = 1_350f,
+                colors = listOf(
+                    Color(0xFF21122F),
+                    Color(0xFF0D0B12),
+                    Color(0xFF07080B),
+                ),
+                center = Offset(920f, 20f),
+                radius = 1_480f,
             )
         )
     ) {
@@ -354,7 +358,14 @@ private fun PromptAllApp(
                     onLoadMore = vm::loadMoreHome,
                     onFavorite = vm::toggleFavorite,
                     onOpenPrompt = { item -> openPromptDetail(item, state.selectedCategory) },
-                    onSearchClick = { selected = 1 },
+                    onSearchClick = {
+                        searchImageFirst = false
+                        selected = 1
+                    },
+                    onImageSearchClick = {
+                        searchImageFirst = true
+                        selected = 1
+                    },
                     newPromptCount = state.newPromptCount,
                     onShowNewPrompts = vm::showNewPrompts,
                     showLatestSection = true,
@@ -378,6 +389,7 @@ private fun PromptAllApp(
                 )
 
                 1 -> SearchScreen(
+                    initialImageMode = searchImageFirst,
                     query = state.query,
                     onQueryChange = vm::setQuery,
                     items = state.search.items,
@@ -468,6 +480,7 @@ private fun PromptAllApp(
                 selected = selected,
                 onSelected = { index ->
                     vm.closeCategory()
+                    if (index == 2) searchImageFirst = false
                     selected = when (index) {
                         0 -> 3
                         1 -> 2
@@ -504,6 +517,7 @@ private fun FeedScreen(
     onFavorite: (PromptDto) -> Unit,
     onOpenPrompt: (PromptDto) -> Unit = {},
     onSearchClick: (() -> Unit)? = null,
+    onImageSearchClick: (() -> Unit)? = null,
     emptyText: String = "پرامپتی برای نمایش وجود ندارد.",
     newPromptCount: Int = 0,
     onShowNewPrompts: () -> Unit = {},
@@ -537,6 +551,7 @@ private fun FeedScreen(
             onFavorite = onFavorite,
             onOpenPrompt = onOpenPrompt,
             onSearchClick = onSearchClick,
+            onImageSearchClick = onImageSearchClick,
             emptyText = emptyText,
             newPromptCount = newPromptCount,
             onShowNewPrompts = onShowNewPrompts,
@@ -582,6 +597,7 @@ private fun FeedContent(
     onFavorite: (PromptDto) -> Unit,
     onOpenPrompt: (PromptDto) -> Unit,
     onSearchClick: (() -> Unit)?,
+    onImageSearchClick: (() -> Unit)?,
     emptyText: String,
     newPromptCount: Int,
     onShowNewPrompts: () -> Unit,
@@ -627,6 +643,13 @@ private fun FeedContent(
                 selectedCategory = selectedCategory,
                 onSelected = onCategorySelected,
             )
+            AnimatedVisibility(
+                visible = !feedHasScrolled,
+                enter = fadeIn(animationSpec = tween(180)) + expandVertically(animationSpec = tween(240)),
+                exit = fadeOut(animationSpec = tween(140)) + shrinkVertically(animationSpec = tween(220)),
+            ) {
+                HomeImageSearchHero(onClick = onImageSearchClick ?: onSearchClick)
+            }
         }
         if (newPromptCount > 0) {
             NewPromptsBanner(newPromptCount, onShowNewPrompts)
@@ -736,6 +759,81 @@ private fun FeedContent(
                             }
                         }
                         if (loadingMore) item { PromptSkeletonCard() }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeImageSearchHero(onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 14.dp),
+        shape = RoundedCornerShape(24.dp),
+        color = Color(0xFF15101D),
+        border = BorderStroke(1.dp, Color(0xFF432A64)),
+    ) {
+        Box(
+            modifier = Modifier.fillMaxWidth().background(
+                Brush.linearGradient(
+                    listOf(Color(0xFF1C1228), Color(0xFF111218), Color(0xFF0E1014))
+                )
+            )
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 15.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Surface(
+                    modifier = Modifier.size(54.dp),
+                    shape = RoundedCornerShape(18.dp),
+                    color = Color(0xFF251638),
+                    contentColor = PurpleSoft,
+                    border = BorderStroke(1.dp, Color(0xFF5B377E)),
+                ) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.ImageSearch, null, Modifier.size(28.dp))
+                    }
+                }
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.End,
+                ) {
+                    Text(
+                        "عکس دارید؟ پرامپتش را پیدا کنید",
+                        modifier = Modifier.fillMaxWidth(),
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        lineHeight = 21.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        textAlign = TextAlign.Right,
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        "یک تصویر انتخاب کنید؛ PromptAll بین پرامپت‌ها جستجو می‌کند",
+                        modifier = Modifier.fillMaxWidth(),
+                        color = Color(0xFFA5A1AC),
+                        fontSize = 10.sp,
+                        lineHeight = 15.sp,
+                        textAlign = TextAlign.Right,
+                    )
+                    Spacer(Modifier.height(7.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "شروع جستجو",
+                            color = PurpleSoft,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Spacer(Modifier.width(5.dp))
+                        Icon(Icons.Default.Search, null, Modifier.size(15.dp), tint = PurpleSoft)
                     }
                 }
             }
@@ -1196,63 +1294,87 @@ private fun CategoryGridCard(
     val isVideo = category.name.contains("ویدئو", ignoreCase = true) ||
         category.name.contains("video", ignoreCase = true) ||
         category.slug.contains("video", ignoreCase = true)
+    val accent = when {
+        isTrending -> Color(0xFFB85CFF)
+        isVideo -> Color(0xFF8C6CFF)
+        else -> Color(0xFF8B8D95)
+    }
 
     Surface(
         onClick = onClick,
-        modifier = modifier.height(108.dp),
-        shape = RoundedCornerShape(20.dp),
+        modifier = modifier.height(112.dp),
+        shape = RoundedCornerShape(22.dp),
         color = Color(0xFF101116),
         border = BorderStroke(
             1.dp,
-            if (isTrending || isVideo) Color(0xFF432A64) else CardBorder,
+            if (isTrending || isVideo) Color(0xFF49305E) else Color(0xFF292B31),
         ),
     ) {
-        Column(
-            modifier = Modifier.fillMaxSize().padding(14.dp),
-            horizontalAlignment = Alignment.End,
-            verticalArrangement = Arrangement.SpaceBetween,
+        Box(
+            modifier = Modifier.fillMaxSize().background(
+                Brush.linearGradient(
+                    listOf(
+                        if (isTrending || isVideo) Color(0x332D173E) else Color(0x111F2025),
+                        Color.Transparent,
+                    )
+                )
+            )
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+            Column(
+                modifier = Modifier.fillMaxSize().padding(14.dp),
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.SpaceBetween,
             ) {
-                Surface(
-                    shape = CircleShape,
-                    color = if (isTrending || isVideo) Color(0xFF21162D) else Color(0xFF18191E),
-                    contentColor = if (isTrending || isVideo) PurpleSoft else Color(0xFFB5B6BC),
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) {
-                        Icon(
-                            when {
-                                isTrending -> Icons.Default.LocalFireDepartment
-                                isVideo -> Icons.Default.Videocam
-                                else -> Icons.Default.Category
-                            },
-                            null,
-                            modifier = Modifier.size(20.dp),
-                        )
+                    Surface(
+                        modifier = Modifier.size(38.dp),
+                        shape = RoundedCornerShape(13.dp),
+                        color = if (isTrending || isVideo) Color(0xFF24162F) else Color(0xFF191A1F),
+                        contentColor = accent,
+                    ) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Icon(
+                                when {
+                                    isTrending -> Icons.Default.LocalFireDepartment
+                                    isVideo -> Icons.Default.Videocam
+                                    else -> Icons.Default.Category
+                                },
+                                null,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                    }
+                    if (category.count > 0) {
+                        Surface(
+                            shape = RoundedCornerShape(50),
+                            color = Color(0xFF17181D),
+                        ) {
+                            Text(
+                                "${category.count.toPersianDigits()} پرامپت",
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                color = MutedText,
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Medium,
+                            )
+                        }
                     }
                 }
-                if (category.count > 0) {
-                    Text(
-                        "${category.count.toPersianDigits()} پرامپت",
-                        color = MutedText,
-                        fontSize = 9.sp,
-                    )
-                }
+                Text(
+                    category.name,
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    textAlign = TextAlign.Right,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
-            Text(
-                category.name,
-                modifier = Modifier.fillMaxWidth(),
-                color = Color.White,
-                fontSize = 13.sp,
-                lineHeight = 18.sp,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Right,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
         }
     }
 }
@@ -1290,7 +1412,7 @@ private fun AppHeader(
     onInfoClick: (() -> Unit)? = null,
 ) {
     Row(
-        Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 15.dp, bottom = 16.dp),
+        Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (onBackClick != null) {
@@ -1307,7 +1429,7 @@ private fun AppHeader(
                 onClick = onInfoClick,
                 contentDescription = "اطلاعات برنامه",
             ) {
-                Icon(Icons.Default.Settings, null, Modifier.size(24.dp), tint = Color.White)
+                Icon(Icons.Default.Info, null, Modifier.size(22.dp), tint = Color.White)
             }
             Spacer(Modifier.width(9.dp))
         }
@@ -1338,8 +1460,8 @@ private fun AppHeader(
             Text(
                 title,
                 color = Color.White,
-                fontSize = 25.sp,
-                lineHeight = 32.sp,
+                fontSize = 24.sp,
+                lineHeight = 31.sp,
                 fontWeight = FontWeight.ExtraBold,
                 textAlign = TextAlign.Right,
             )
@@ -1363,7 +1485,7 @@ private fun HeaderCircleButton(
 ) {
     Surface(
         onClick = onClick,
-        modifier = Modifier.size(52.dp),
+        modifier = Modifier.size(46.dp),
         shape = CircleShape,
         color = Color(0xFF17191D),
         border = BorderStroke(1.dp, Color(0xFF24262B)),
@@ -1386,6 +1508,7 @@ private fun HeaderCircleButton(
 
 @Composable
 private fun SearchScreen(
+    initialImageMode: Boolean,
     query: String,
     onQueryChange: (String) -> Unit,
     items: List<PromptDto>,
@@ -1405,134 +1528,286 @@ private fun SearchScreen(
     onSearchImageWithAi: () -> Unit,
 ) {
     val context = LocalContext.current
+    var imageMode by rememberSaveable(initialImageMode) { mutableStateOf(initialImageMode) }
     var showGeneratedPrompt by remember(imageSearch.previewUri) { mutableStateOf(false) }
+    val imagePageScroll = rememberScrollState()
+
     LaunchedEffect(imageSearch.generatedPrompt) {
         if (imageSearch.generatedPrompt != null) showGeneratedPrompt = true
     }
+    LaunchedEffect(showGeneratedPrompt, imageSearch.generatedPrompt) {
+        if (showGeneratedPrompt && imageSearch.generatedPrompt != null) {
+            delay(140)
+            imagePageScroll.animateScrollTo(imagePageScroll.maxValue)
+        }
+    }
+
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) onSearchImage(uri)
     }
 
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        AppHeader("جست‌وجوی پرامپت", "با متن یا تصویر، پرامپت مناسب را پیدا کنید", null)
-
-        ImageSearchPanel(
-            state = imageSearch,
-            onPickImage = { picker.launch("image/*") },
-            onClear = onClearImageSearch,
-            onRefreshStatus = onRefreshImageSearchStatus,
+        AppHeader(
+            title = "جست‌وجوی پرامپت",
+            subtitle = "پرامپت مناسب را با متن یا تصویر پیدا کنید",
+            onSearchClick = null,
         )
 
-        if (imageSearch.previewUri != null && imageSearch.aiAvailable) {
-            ImageSearchAiPanel(
-                state = imageSearch,
-                favoriteIds = favoriteIds,
-                showGeneratedPrompt = showGeneratedPrompt,
-                onRunAi = {
-                    showGeneratedPrompt = false
-                    onSearchImageWithAi()
-                },
-                onShowGeneratedPrompt = { showGeneratedPrompt = true },
-                onFavorite = onFavorite,
-                onOpenPrompt = onOpenPrompt,
-                onCopyPrompt = { copyPrompt(context, it) },
-            )
-        }
+        SearchModeSwitcher(
+            imageMode = imageMode,
+            onImageMode = { imageMode = true },
+            onTextMode = { imageMode = false },
+        )
 
-        if (imageSearch.results.isNotEmpty()) {
-            Column(Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
+        if (imageMode) {
+            Column(
+                modifier = Modifier.fillMaxWidth().weight(1f)
+                    .verticalScroll(imagePageScroll)
+                    .padding(bottom = 96.dp),
+            ) {
+                ImageSearchPanel(
+                    state = imageSearch,
+                    onPickImage = { picker.launch("image/*") },
+                    onClear = onClearImageSearch,
+                    onRefreshStatus = onRefreshImageSearchStatus,
+                )
+
+                if (
+                    imageSearch.previewUri != null &&
+                    imageSearch.aiAvailable &&
+                    (!imageSearch.backendAvailable || imageSearch.remaining > 0 || imageSearch.results.isNotEmpty())
                 ) {
-                    Text(
-                        "نتایج مشابه",
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                    )
-                    Text(
-                        "${imageSearch.results.size} نتیجه",
-                        color = MutedText,
-                        fontSize = 10.sp,
+                    ImageSearchAiPanel(
+                        state = imageSearch,
+                        favoriteIds = favoriteIds,
+                        showGeneratedPrompt = showGeneratedPrompt,
+                        onRunAi = {
+                            showGeneratedPrompt = false
+                            onSearchImageWithAi()
+                        },
+                        onShowGeneratedPrompt = { showGeneratedPrompt = true },
+                        onFavorite = onFavorite,
+                        onOpenPrompt = onOpenPrompt,
+                        onCopyPrompt = { copyPrompt(context, it) },
                     )
                 }
-                LazyRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    contentPadding = PaddingValues(horizontal = 14.dp),
-                    horizontalArrangement = Arrangement.spacedBy(9.dp),
-                    reverseLayout = true,
+
+                if (imageSearch.results.isNotEmpty()) {
+                    Column(Modifier.fillMaxWidth().padding(top = 5.dp, bottom = 12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 7.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(50),
+                                color = Color(0xFF171125),
+                                contentColor = PurpleSoft,
+                            ) {
+                                Text(
+                                    "${imageSearch.results.size.toPersianDigits()} نتیجه",
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                            Text(
+                                "نتایج مشابه",
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                            )
+                        }
+                        LazyRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentPadding = PaddingValues(horizontal = 14.dp),
+                            horizontalArrangement = Arrangement.spacedBy(9.dp),
+                            reverseLayout = true,
+                        ) {
+                            items(imageSearch.results, key = { it.id }) { result ->
+                                ImageSearchResultCard(
+                                    item = result.toPrompt(),
+                                    similarity = result.similarityPercent,
+                                    matchType = result.matchType,
+                                    favorite = result.id in favoriteIds,
+                                    onFavorite = { onFavorite(result.toPrompt()) },
+                                    onOpen = { onOpenPrompt(result.toPrompt()) },
+                                )
+                            }
+                        }
+                    }
+                } else if (imageSearch.previewUri == null && !imageSearch.searching) {
+                    SearchEmptyHint(
+                        iconText = "✦",
+                        title = "یک عکس انتخاب کنید",
+                        subtitle = "اگر تصویر در آرشیو PromptAll باشد، پرامپت مرتبط را پیدا می‌کنیم.",
+                    )
+                }
+            }
+        } else {
+            OutlinedTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 12.dp),
+                placeholder = { Text("مثلاً پرتره سینمایی...", color = Color(0xFF777980)) },
+                leadingIcon = { Icon(Icons.Default.Search, null, tint = PurpleSoft) },
+                singleLine = true,
+                shape = RoundedCornerShape(20.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Purple,
+                    unfocusedBorderColor = CardBorder,
+                    focusedContainerColor = Color(0xFF101116),
+                    unfocusedContainerColor = Color(0xFF101116),
+                ),
+            )
+
+            when {
+                query.isBlank() -> Box(
+                    Modifier.fillMaxWidth().weight(1f).padding(bottom = 96.dp),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    items(imageSearch.results, key = { it.id }) { result ->
-                        ImageSearchResultCard(
-                            item = result.toPrompt(),
-                            similarity = result.similarityPercent,
-                            matchType = result.matchType,
-                            favorite = result.id in favoriteIds,
-                            onFavorite = { onFavorite(result.toPrompt()) },
-                            onOpen = { onOpenPrompt(result.toPrompt()) },
+                    SearchEmptyHint(
+                        iconText = "⌕",
+                        title = "چی می‌خواهید بسازید؟",
+                        subtitle = "عنوان، سبک، موضوع یا بخشی از پرامپت را بنویسید.",
+                    )
+                }
+                loading -> PromptSkeletonList(Modifier.weight(1f))
+                error != null && items.isEmpty() -> ErrorState(
+                    error, onRetry, Modifier.fillMaxWidth().weight(1f)
+                )
+                items.isEmpty() -> Box(
+                    Modifier.fillMaxWidth().weight(1f).padding(bottom = 96.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    SearchEmptyHint(
+                        iconText = "–",
+                        title = "نتیجه‌ای پیدا نشد",
+                        subtitle = "عبارت کوتاه‌تر یا کلمه دیگری را امتحان کنید.",
+                    )
+                }
+                else -> LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = 96.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    item(key = "text-result-count") {
+                        Text(
+                            "${items.size.toPersianDigits()} نتیجه",
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp),
+                            color = MutedText,
+                            fontSize = 10.sp,
+                            textAlign = TextAlign.Right,
                         )
                     }
-                }
-            }
-        }
-
-        OutlinedTextField(
-            value = query,
-            onValueChange = onQueryChange,
-            modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
-            placeholder = { Text("مثلاً پرتره سینمایی...", color = Color(0xFF777980)) },
-            leadingIcon = { Icon(Icons.Default.Search, null, tint = PurpleSoft) },
-            singleLine = true,
-            shape = RoundedCornerShape(22.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Purple,
-                unfocusedBorderColor = CardBorder,
-                focusedContainerColor = Color(0xFF101116),
-                unfocusedContainerColor = Color(0xFF101116),
-            ),
-        )
-
-        when {
-            query.isBlank() -> Box(
-                Modifier.fillMaxWidth().weight(1f).padding(bottom = 110.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    if (imageSearch.results.isEmpty()) "برای جست‌وجوی متنی چیزی بنویسید" else "برای دیدن جزئیات، یکی از نتایج بالا را انتخاب کنید",
-                    color = MutedText,
-                    fontSize = 12.sp,
-                )
-            }
-            loading -> PromptSkeletonList(Modifier.weight(1f))
-            error != null && items.isEmpty() -> ErrorState(
-                error, onRetry, Modifier.fillMaxWidth().weight(1f)
-            )
-            items.isEmpty() -> Box(
-                Modifier.fillMaxWidth().weight(1f).padding(bottom = 110.dp),
-                contentAlignment = Alignment.Center,
-            ) { Text("نتیجه‌ای پیدا نشد.", color = MutedText) }
-            else -> LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = 118.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                itemsIndexed(items, key = { _, item -> item.id }) { index, item ->
-                    PromptCard(
-                        item = item,
-                        favorite = item.id in favoriteIds,
-                        onFavorite = { onFavorite(item) },
-                        onOpen = { onOpenPrompt(item) },
-                    )
-                    if (index == (items.lastIndex - 3).coerceAtLeast(0)) {
-                        LaunchedEffect(items.size) { onLoadMore() }
+                    itemsIndexed(items, key = { _, item -> item.id }) { index, item ->
+                        PromptCard(
+                            item = item,
+                            favorite = item.id in favoriteIds,
+                            onFavorite = { onFavorite(item) },
+                            onOpen = { onOpenPrompt(item) },
+                        )
+                        if (index == (items.lastIndex - 3).coerceAtLeast(0)) {
+                            LaunchedEffect(items.size) { onLoadMore() }
+                        }
                     }
+                    if (loadingMore) item { PromptSkeletonCard() }
                 }
-                if (loadingMore) item { PromptSkeletonCard() }
             }
         }
+    }
+}
+
+@Composable
+private fun SearchModeSwitcher(
+    imageMode: Boolean,
+    onImageMode: () -> Unit,
+    onTextMode: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 10.dp),
+        shape = RoundedCornerShape(18.dp),
+        color = Color(0xFF101116),
+        border = BorderStroke(1.dp, CardBorder),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            SearchModeButton(
+                modifier = Modifier.weight(1f),
+                selected = !imageMode,
+                title = "جستجو با متن",
+                icon = { Icon(Icons.Default.Search, null, Modifier.size(18.dp)) },
+                onClick = onTextMode,
+            )
+            SearchModeButton(
+                modifier = Modifier.weight(1f),
+                selected = imageMode,
+                title = "جستجو با عکس",
+                icon = { Icon(Icons.Default.ImageSearch, null, Modifier.size(18.dp)) },
+                onClick = onImageMode,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SearchModeButton(
+    modifier: Modifier,
+    selected: Boolean,
+    title: String,
+    icon: @Composable () -> Unit,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(14.dp),
+        color = if (selected) Color(0xFF2A1840) else Color.Transparent,
+        contentColor = if (selected) PurpleSoft else Color(0xFF9A9BA2),
+        border = if (selected) BorderStroke(1.dp, Color(0xFF5C397E)) else null,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            icon()
+            Spacer(Modifier.width(7.dp))
+            Text(title, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun SearchEmptyHint(iconText: String, title: String, subtitle: String) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 34.dp, vertical = 28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Surface(
+            modifier = Modifier.size(48.dp),
+            shape = CircleShape,
+            color = Color(0xFF17131E),
+            contentColor = PurpleSoft,
+            border = BorderStroke(1.dp, Color(0xFF30233E)),
+        ) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(iconText, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        Spacer(Modifier.height(11.dp))
+        Text(title, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            subtitle,
+            color = MutedText,
+            fontSize = 10.sp,
+            lineHeight = 16.sp,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 
@@ -1543,6 +1818,7 @@ private fun ImageSearchPanel(
     onClear: () -> Unit,
     onRefreshStatus: () -> Unit,
 ) {
+    val quotaExhausted = state.statusLoaded && state.backendAvailable && state.enabled && state.remaining <= 0
     val canSearch = !state.searching &&
         (!state.statusLoaded || !state.backendAvailable || state.enabled) &&
         (!state.backendAvailable || state.remaining > 0)
@@ -1550,18 +1826,18 @@ private fun ImageSearchPanel(
     Surface(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
         shape = RoundedCornerShape(24.dp),
-        color = Color(0xE6111017),
-        border = BorderStroke(1.dp, Color(0xFF3A2851)),
+        color = Color(0xF2111017),
+        border = BorderStroke(1.dp, if (quotaExhausted) Color(0xFF5A4731) else Color(0xFF3A2851)),
     ) {
-        Column(Modifier.fillMaxWidth().padding(14.dp)) {
+        Column(Modifier.fillMaxWidth().padding(15.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(13.dp),
             ) {
                 Surface(
-                    modifier = Modifier.size(76.dp),
-                    shape = RoundedCornerShape(20.dp),
+                    modifier = Modifier.size(82.dp),
+                    shape = RoundedCornerShape(22.dp),
                     color = Color(0xFF17111F),
                     border = BorderStroke(1.dp, Color(0xFF4B2F68)),
                 ) {
@@ -1575,57 +1851,52 @@ private fun ImageSearchPanel(
                             )
                             Surface(
                                 onClick = onClear,
-                                modifier = Modifier.align(Alignment.TopStart).padding(5.dp).size(25.dp),
+                                modifier = Modifier.align(Alignment.TopStart).padding(5.dp).size(27.dp),
                                 shape = CircleShape,
-                                color = Color(0xCC050608),
+                                color = Color(0xD9050608),
                             ) {
                                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Default.Close, null, Modifier.size(15.dp), tint = Color.White)
+                                    Icon(Icons.Default.Close, null, Modifier.size(16.dp), tint = Color.White)
                                 }
                             }
                         }
                     } else {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.ImageSearch, null, Modifier.size(34.dp), tint = PurpleSoft)
+                            Icon(Icons.Default.ImageSearch, null, Modifier.size(36.dp), tint = PurpleSoft)
                         }
                     }
                 }
 
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
-                    Row(
+                    Text(
+                        "پرامپت این تصویر را پیدا کن",
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(Icons.Default.AutoAwesome, null, Modifier.size(18.dp), tint = PurpleSoft)
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            "یافتن پرامپت با تصویر",
-                            color = Color.White,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            textAlign = TextAlign.Right,
-                        )
-                    }
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        lineHeight = 21.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        textAlign = TextAlign.Right,
+                    )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "عکس را انتخاب کنید یا از برنامه‌های دیگر برای PromptAll بفرستید",
+                        "عکس را انتخاب کنید؛ جستجوی عادی بدون هوش مصنوعی انجام می‌شود.",
                         modifier = Modifier.fillMaxWidth(),
                         color = MutedText,
                         fontSize = 10.sp,
                         lineHeight = 15.sp,
                         textAlign = TextAlign.Right,
                     )
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(9.dp))
                     Surface(
-                        modifier = Modifier.clickable(enabled = canSearch, onClick = onPickImage),
+                        onClick = onPickImage,
+                        enabled = canSearch,
                         shape = RoundedCornerShape(14.dp),
-                        color = if (canSearch) Color(0xFF2A1640) else Color(0xFF17171B),
+                        color = if (canSearch) Color(0xFF2A1640) else Color(0xFF18181D),
                         contentColor = if (canSearch) PurpleSoft else Color(0xFF6C6D73),
                         border = BorderStroke(1.dp, if (canSearch) Color(0xFF623A88) else CardBorder),
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(7.dp),
                         ) {
@@ -1640,41 +1911,95 @@ private fun ImageSearchPanel(
                 }
             }
 
-            Spacer(Modifier.height(10.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+            Spacer(Modifier.height(12.dp))
+
+            Surface(
+                modifier = Modifier.fillMaxWidth()
+                    .clickable(enabled = !state.searching, onClick = onRefreshStatus),
+                shape = RoundedCornerShape(14.dp),
+                color = Color(0xFF0D0E12),
+                border = BorderStroke(1.dp, Color(0xFF24262D)),
             ) {
-                Text(
-                    when {
-                        !state.statusLoaded -> "در حال بررسی سرویس..."
-                        state.backendAvailable && state.enabled -> "${state.remaining} از ${state.dailyLimit} جستجو باقی مانده"
-                        state.backendAvailable && !state.enabled -> "جستجو با تصویر فعلاً غیرفعال است"
-                        else -> "وضعیت سرویس در دسترس نیست"
-                    },
-                    color = if (state.backendAvailable && state.enabled) PurpleSoft else MutedText,
-                    fontSize = 10.sp,
-                    modifier = Modifier.clickable(enabled = !state.searching, onClick = onRefreshStatus),
-                )
-                Text(
-                    "جستجوی عادی خصوصی؛ AI فقط با انتخاب شما",
-                    color = Color(0xFF777980),
-                    fontSize = 9.sp,
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        when {
+                            !state.statusLoaded -> "در حال بررسی سرویس..."
+                            state.backendAvailable && state.enabled && !quotaExhausted ->
+                                "${state.remaining.toPersianDigits()} از ${state.dailyLimit.toPersianDigits()} جستجو باقی مانده"
+                            quotaExhausted -> "سهمیه امروز به پایان رسیده"
+                            state.backendAvailable && !state.enabled -> "جستجو با تصویر فعلاً غیرفعال است"
+                            else -> "وضعیت سرویس در دسترس نیست"
+                        },
+                        color = if (!quotaExhausted && state.backendAvailable && state.enabled) PurpleSoft else MutedText,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        "خصوصی و بدون ذخیره تصویر",
+                        color = Color(0xFF777980),
+                        fontSize = 9.sp,
+                    )
+                }
             }
 
-            if (state.error != null) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    state.error,
+            if (quotaExhausted) {
+                Spacer(Modifier.height(10.dp))
+                DailyQuotaNotice()
+            } else if (state.error != null) {
+                Spacer(Modifier.height(9.dp))
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    color = if (state.remaining <= 0 && state.backendAvailable) Color(0xFFFFB66F) else Color(0xFFFF8B9A),
-                    fontSize = 10.sp,
-                    lineHeight = 15.sp,
-                    textAlign = TextAlign.Right,
-                )
+                    shape = RoundedCornerShape(14.dp),
+                    color = Color(0xFF251316),
+                    border = BorderStroke(1.dp, Color(0xFF5A2D34)),
+                ) {
+                    Text(
+                        state.error,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                        color = Color(0xFFFFA0AA),
+                        fontSize = 10.sp,
+                        lineHeight = 16.sp,
+                        textAlign = TextAlign.Right,
+                    )
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun DailyQuotaNotice() {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = Color(0xFF211A12),
+        border = BorderStroke(1.dp, Color(0xFF5A4731)),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            horizontalAlignment = Alignment.End,
+        ) {
+            Text(
+                "سهمیه روزانه شما به پایان رسیده",
+                modifier = Modifier.fillMaxWidth(),
+                color = Color(0xFFFFD39A),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.ExtraBold,
+                textAlign = TextAlign.Right,
+            )
+            Spacer(Modifier.height(5.dp))
+            Text(
+                "برای اینکه این قابلیت را رایگان و پایدار در اختیار همه کاربران PromptAll قرار دهیم، تعداد جستجوهای روزانه محدود شده است. سهمیه شما فردا به‌صورت خودکار دوباره فعال می‌شود. ممنونیم که همراه ما هستید و شرایط را درک می‌کنید.",
+                modifier = Modifier.fillMaxWidth(),
+                color = Color(0xFFD4C6B3),
+                fontSize = 10.sp,
+                lineHeight = 17.sp,
+                textAlign = TextAlign.Right,
+            )
         }
     }
 }
@@ -1690,16 +2015,6 @@ private fun ImageSearchAiPanel(
     onOpenPrompt: (PromptDto) -> Unit,
     onCopyPrompt: (String) -> Unit,
 ) {
-    val aiPanelScroll = rememberScrollState()
-
-    LaunchedEffect(showGeneratedPrompt, state.generatedPrompt) {
-        if (showGeneratedPrompt && state.generatedPrompt != null) {
-            // Wait for the generated prompt card to be measured, then reveal it.
-            delay(120)
-            aiPanelScroll.animateScrollTo(aiPanelScroll.maxValue)
-        }
-    }
-
     Surface(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 5.dp),
         shape = RoundedCornerShape(24.dp),
@@ -1709,8 +2024,6 @@ private fun ImageSearchAiPanel(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = 430.dp)
-                .verticalScroll(aiPanelScroll)
                 .padding(14.dp),
             horizontalAlignment = Alignment.End,
         ) {
@@ -1811,14 +2124,25 @@ private fun ImageSearchAiPanel(
 
             if (state.aiError != null) {
                 Spacer(Modifier.height(9.dp))
-                Text(
-                    state.aiError,
+                val quotaLikeError = state.aiError.contains("سهمیه") || state.aiError.contains("ظرفیت")
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    color = Color(0xFFFFB47B),
-                    fontSize = 10.sp,
-                    lineHeight = 15.sp,
-                    textAlign = TextAlign.Right,
-                )
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (quotaLikeError) Color(0xFF211A12) else Color(0xFF241416),
+                    border = BorderStroke(
+                        1.dp,
+                        if (quotaLikeError) Color(0xFF5A4731) else Color(0xFF5A2D34),
+                    ),
+                ) {
+                    Text(
+                        state.aiError,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                        color = if (quotaLikeError) Color(0xFFFFD39A) else Color(0xFFFFA0AA),
+                        fontSize = 10.sp,
+                        lineHeight = 16.sp,
+                        textAlign = TextAlign.Right,
+                    )
+                }
             }
 
             if (state.generatedPrompt != null) {
@@ -2020,13 +2344,13 @@ private fun PromptCard(
 
     Surface(
         onClick = onOpen,
-        modifier = Modifier.fillMaxWidth().height(180.dp),
-        shape = RoundedCornerShape(22.dp),
-        color = Color(0xD90D0E12),
-        border = BorderStroke(1.dp, CardBorder),
+        modifier = Modifier.fillMaxWidth().height(174.dp),
+        shape = RoundedCornerShape(24.dp),
+        color = Color(0xF20D0F13),
+        border = BorderStroke(1.dp, Color(0xFF292B32)),
     ) {
         Row(Modifier.fillMaxSize()) {
-            Box(Modifier.weight(0.43f).fillMaxHeight()) {
+            Box(Modifier.weight(0.44f).fillMaxHeight()) {
                 AsyncImage(
                     model = item.image.url,
                     contentDescription = item.title,
@@ -2034,69 +2358,63 @@ private fun PromptCard(
                     modifier = Modifier.fillMaxSize(),
                 )
                 Box(
-                    Modifier.align(Alignment.TopStart).padding(10.dp).size(38.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xA31B1C1F))
-                        .clickable(
-                            role = Role.Button,
-                            onClickLabel = if (favorite) {
-                                "حذف از علاقه‌مندی"
-                            } else {
-                                "افزودن به علاقه‌مندی"
-                            },
-                            onClick = onFavorite,
-                        ),
-                    contentAlignment = Alignment.Center,
+                    Modifier.fillMaxWidth().height(72.dp).align(Alignment.BottomCenter)
+                        .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xA9000000))))
+                )
+                Surface(
+                    onClick = onFavorite,
+                    modifier = Modifier.align(Alignment.TopStart).padding(9.dp).size(36.dp),
+                    shape = CircleShape,
+                    color = Color(0xD516171B),
+                    contentColor = if (favorite) Color(0xFFFF5F78) else Color.White,
                 ) {
-                    Icon(
-                        if (favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                        null,
-                        Modifier.size(21.dp),
-                        tint = if (favorite) Color(0xFFFF5872) else Color.White,
-                    )
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            if (favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                            contentDescription = if (favorite) "حذف از علاقه‌مندی" else "افزودن به علاقه‌مندی",
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
                 }
             }
 
             Column(
-                Modifier.weight(0.57f).fillMaxHeight().padding(
-                    start = 15.dp, end = 11.dp, top = 11.dp, bottom = 11.dp
-                )
+                modifier = Modifier.weight(0.56f).fillMaxHeight()
+                    .padding(start = 14.dp, end = 13.dp, top = 13.dp, bottom = 12.dp),
+                horizontalAlignment = Alignment.End,
             ) {
-                Row(verticalAlignment = Alignment.Top) {
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = Color(0xFF1D1429),
+                    contentColor = PurpleSoft,
+                ) {
                     Text(
                         "پرامپت آماده",
-                        color = PurpleSoft,
-                        fontSize = 11.sp,
-                        modifier = Modifier.weight(1f),
-                        textAlign = TextAlign.Right,
-                    )
-                    Icon(
-                        Icons.Default.MoreVert,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        tint = Color(0xFF808188),
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
                     )
                 }
-                Spacer(Modifier.height(7.dp))
+                Spacer(Modifier.height(8.dp))
                 Text(
                     item.title,
                     modifier = Modifier.fillMaxWidth(),
-                    color = Color.White,
-                    fontSize = 16.sp,
-                    lineHeight = 22.sp,
-                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFF7F5FA),
+                    fontSize = 15.sp,
+                    lineHeight = 21.sp,
+                    fontWeight = FontWeight.ExtraBold,
                     textAlign = TextAlign.Right,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(5.dp))
                 Text(
                     item.promptText,
                     modifier = Modifier.fillMaxWidth(),
-                    color = MutedText,
-                    fontSize = 11.sp,
-                    lineHeight = 16.sp,
-                    maxLines = 3,
+                    color = Color(0xFF9D9EA6),
+                    fontSize = 10.sp,
+                    lineHeight = 15.sp,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Left,
                 )
@@ -2106,25 +2424,27 @@ private fun PromptCard(
                         copyPrompt(context, item.promptText)
                         copied = true
                     },
-                    modifier = Modifier.align(Alignment.End),
-                    shape = RoundedCornerShape(50),
-                    color = Color(0xFF171125),
-                    contentColor = PurpleSoft,
-                    border = BorderStroke(1.dp, Color(0xFF432A64)),
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (copied) Color(0xFF18251D) else Color(0xFF1B1326),
+                    contentColor = if (copied) Color(0xFF91D9A1) else PurpleSoft,
+                    border = BorderStroke(
+                        1.dp,
+                        if (copied) Color(0xFF31593A) else Color(0xFF4B3067),
+                    ),
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 13.dp, vertical = 7.dp),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(7.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Icon(
                             if (copied) Icons.Default.Check else Icons.Default.ContentCopy,
                             null,
-                            Modifier.size(17.dp),
+                            Modifier.size(16.dp),
                         )
                         Text(
                             if (copied) "کپی شد" else "کپی پرامپت",
-                            fontSize = 11.sp,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                         )
                     }
@@ -2768,66 +3088,69 @@ private fun FloatingBottomBar(
     onCenterClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Box(
+    Surface(
         modifier = modifier.fillMaxWidth(0.94f).widthIn(max = 450.dp)
-            .navigationBarsPadding().padding(bottom = 7.dp).height(82.dp),
+            .navigationBarsPadding().padding(bottom = 8.dp)
+            .height(64.dp)
+            .shadow(14.dp, RoundedCornerShape(24.dp)),
+        shape = RoundedCornerShape(24.dp),
+        color = Color(0xF5111217),
+        border = BorderStroke(1.dp, Color(0xFF292B33)),
     ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth().height(68.dp).align(Alignment.BottomCenter)
-                .shadow(20.dp, RoundedCornerShape(27.dp)),
-            shape = RoundedCornerShape(27.dp),
-            color = Color(0xF0111217),
-            border = BorderStroke(1.dp, Color(0xFF282A31)),
+        Row(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 5.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                Modifier.fillMaxSize().padding(horizontal = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                BottomTab(tabs[0], selected == 3) { onSelected(0) }
-                BottomTab(tabs[1], selected == 2) { onSelected(1) }
-                Spacer(Modifier.width(74.dp))
-                BottomTab(tabs[2], selected == 1) { onSelected(2) }
-                BottomTab(tabs[3], selected == 0) { onSelected(3) }
-            }
-        }
+            BottomTab(tabs[0], selected == 3) { onSelected(0) }
+            BottomTab(tabs[1], selected == 2) { onSelected(1) }
 
-        Surface(
-            onClick = onCenterClick,
-            modifier = Modifier.size(70.dp).align(Alignment.TopCenter)
-                .shadow(22.dp, CircleShape),
-            shape = CircleShape,
-            color = Purple,
-            contentColor = Color.White,
-            border = BorderStroke(1.dp, Color(0xFFBE86FF)),
-        ) {
             Box(
-                Modifier.background(
-                    Brush.linearGradient(listOf(Color(0xFFB866FF), Color(0xFF8042E7)))
-                ),
+                modifier = Modifier.weight(0.86f).fillMaxHeight(),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Default.Refresh, "تازه‌سازی پرامپت‌ها", Modifier.size(31.dp))
+                Surface(
+                    onClick = onCenterClick,
+                    modifier = Modifier.size(48.dp),
+                    shape = CircleShape,
+                    color = Purple,
+                    contentColor = Color.White,
+                    border = BorderStroke(1.dp, Color(0xFFB978FF)),
+                ) {
+                    Box(
+                        Modifier.background(
+                            Brush.linearGradient(listOf(Color(0xFFB45EFF), Color(0xFF7B3FDF)))
+                        ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(Icons.Default.Refresh, "پیشنهادهای تازه", Modifier.size(24.dp))
+                    }
+                }
             }
+
+            BottomTab(tabs[2], selected == 1) { onSelected(2) }
+            BottomTab(tabs[3], selected == 0) { onSelected(3) }
         }
     }
 }
 
 @Composable
 private fun RowScope.BottomTab(tab: Tab, selected: Boolean, onClick: () -> Unit) {
-    val color = if (selected) PurpleSoft else Color(0xFF8B8D94)
+    val color = if (selected) PurpleSoft else Color(0xFF8F9098)
     Column(
-        modifier = Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(20.dp))
+        modifier = Modifier.weight(1f).fillMaxHeight()
+            .clip(RoundedCornerShape(17.dp))
+            .background(if (selected) Color(0xFF24172F) else Color.Transparent)
             .clickable(role = Role.Tab, onClickLabel = tab.title, onClick = onClick),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        tab.icon(Modifier.size(23.dp), color)
+        tab.icon(Modifier.size(if (selected) 22.dp else 21.dp), color)
         Spacer(Modifier.height(3.dp))
         Text(
             tab.title,
             color = color,
             fontSize = 9.sp,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.Medium,
             maxLines = 1,
         )
     }

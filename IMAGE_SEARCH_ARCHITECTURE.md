@@ -2,21 +2,23 @@
 
 ## Privacy boundary
 
-Raw user images never leave the Android device. PromptAll v3.7.0 decodes the selected/shared URI locally, downsamples it in memory, derives numeric fingerprints and local ML Kit semantic labels, sends only those small derived values, then releases the bitmap.
+Raw user images never leave the Android device. PromptAll decodes the selected/shared URI locally, downsamples it in memory, derives numeric perceptual fingerprints (pHash/dHash/aHash + histogram), sends only those small derived values, then releases the bitmap.
+
+The lightweight Android release no longer bundles ML Kit Image Labeling. This is intentional: the normal site matcher works from the perceptual fingerprints and the explicit Gemini fallback remains available only when the user chooses it.
 
 ## Server scope
 
-`PromptAll Image Search 1.0.0` is a separate WordPress plugin and REST namespace. It does not modify the current PromptAll API implementation.
+`PromptAll Image Search` is a separate WordPress plugin and REST namespace. It does not modify the current PromptAll API implementation.
 
 Only published posts of the admin-selected Prompt post type are indexed. Media Library browsing is never exposed to users.
 
 ## Storage
 
-No WordPress/MySQL table is created.
+No per-search image is stored by the Android app or the search endpoint.
 
 - Index: sharded JSON files under a private plugin data directory.
 - Pending indexing queue: file-based.
-- Daily per-installation quota: 1024-shard, date-scoped file cache to keep lock/write size small under heavier traffic.
+- Daily per-installation quota: date-scoped cache.
 - Network abuse guard: hashed IP key only; raw IP is not persisted by the plugin.
 - No per-search history is stored.
 
@@ -27,23 +29,23 @@ No WordPress/MySQL table is created.
 - Publishing/updating a prompt queues only that post.
 - Unpublishing/deleting a prompt removes it from the search index.
 
-## Matching in 1.0
+## Matching
 
-The first production-safe version uses a hybrid model:
+The lightweight Android client uses:
 
 - perceptual fingerprints for exact/near-duplicate matching,
-- color similarity for low-level visual ranking,
-- the bundled ML Kit image-labeling model on Android for semantic hints,
-- precomputed prompt-text tokens in the file index for a semantic score.
+- color histogram similarity for low-level visual ranking,
+- precomputed server index data for candidate ranking,
+- optional explicit Gemini fallback for semantic analysis and prompt generation.
 
-There is no cloud AI request and no server-side model inference. This keeps the feature private and lightweight while improving results for images that are not pixel-identical. The REST namespace and index format remain versioned so a future full vector-embedding engine can be added without breaking older app versions.
+The normal search path does not call cloud AI. Gemini is a separate user-triggered path and uses the user's own network/VPN connection.
 
-## Compatibility contract
-The existing `promptall/v1` endpoints are not modified. The WordPress feature can be installed, indexed and kept disabled before Android v3.7.0 is released. Older app versions never call the new namespace and continue to work normally.
+## Android exact-match parity
 
-
-## Android 3.8.2 exact-match parity
-
-The Android client sends `client_type=web` for the fingerprint search endpoint intentionally. The backend web profile contains the browser/device tolerant rescue thresholds that are required because Android Bitmap scaling and browser Canvas/GD scaling can differ by a few hash bits even for the same source image. This does not upload the raw image and does not change the quota model.
+The Android client sends `client_type=web` for the fingerprint search endpoint intentionally. The backend web profile contains browser/device-tolerant rescue thresholds because Android Bitmap scaling and browser Canvas/GD scaling can differ by a few hash bits even for the same source image. This does not upload the raw image and does not change the quota model.
 
 Android also normalizes EXIF orientation before fingerprinting so gallery/camera images match the visual orientation used by browsers.
+
+## Compatibility contract
+
+The existing `promptall/v1` endpoints are not modified. Older app versions never call the new namespace and continue to work normally.
