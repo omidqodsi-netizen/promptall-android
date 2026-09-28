@@ -13,8 +13,8 @@ android {
         applicationId = "ir.promptall.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 30900
-        versionName = "3.9.0"
+        versionCode = 30901
+        versionName = "3.9.1"
         vectorDrawables.useSupportLibrary = true
 
         // PromptAll is distributed to real Android phones. Keep the release focused

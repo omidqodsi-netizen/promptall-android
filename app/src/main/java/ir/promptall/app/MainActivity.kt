@@ -199,6 +199,11 @@ private data class DetailEntry(
     val sourceCategory: String?,
 )
 
+private enum class HomeContentTab {
+    VISUAL,
+    VIDEO,
+}
+
 @Composable
 private fun PromptAllApp(
     vm: PromptViewModel,
@@ -206,6 +211,7 @@ private fun PromptAllApp(
     onSharedImageConsumed: () -> Unit,
 ) {
     var selected by rememberSaveable { mutableIntStateOf(0) }
+    var homeContentTabIndex by rememberSaveable { mutableIntStateOf(0) }
     var searchImageFirst by rememberSaveable { mutableStateOf(false) }
     var showAbout by rememberSaveable { mutableStateOf(false) }
     var detailPrompt by remember { mutableStateOf<PromptDto?>(null) }
@@ -216,7 +222,13 @@ private fun PromptAllApp(
         context.getSharedPreferences("promptall_display", Context.MODE_PRIVATE)
     }
     var galleryMode by rememberSaveable {
-        mutableStateOf(displayPreferences.getBoolean("home_gallery_mode", false))
+        mutableStateOf(
+            if (displayPreferences.contains("home_gallery_mode")) {
+                displayPreferences.getBoolean("home_gallery_mode", true)
+            } else {
+                true
+            }
+        )
     }
     val state by vm.state
     val saved by vm.favorites.collectAsStateWithLifecycle()
@@ -230,7 +242,39 @@ private fun PromptAllApp(
     } else {
         state.latestHome
     }
+    val visualRootCategory = state.categories.firstOrNull { category ->
+        category.slug.equals("visual-prompts", ignoreCase = true) ||
+            category.name.contains("تصویری", ignoreCase = true) ||
+            category.name.contains("image", ignoreCase = true)
+    }
+    val videoRootCategory = state.categories.firstOrNull { category ->
+        category.name.contains("ویدئو", ignoreCase = true) ||
+            category.name.contains("ویدیو", ignoreCase = true) ||
+            category.slug.contains("video", ignoreCase = true)
+    }
     val lifecycleOwner = LocalLifecycleOwner.current
+
+    LaunchedEffect(state.categories, homeContentTabIndex) {
+        if (state.categories.isEmpty()) return@LaunchedEffect
+        when (HomeContentTab.entries[homeContentTabIndex.coerceIn(0, HomeContentTab.entries.lastIndex)]) {
+            HomeContentTab.VISUAL -> {
+                val visualSlug = visualRootCategory?.slug
+                val videoSlug = videoRootCategory?.slug
+                if (
+                    visualSlug != null &&
+                    (state.selectedCategory == null || state.selectedCategory == videoSlug)
+                ) {
+                    vm.selectCategory(visualSlug)
+                }
+            }
+            HomeContentTab.VIDEO -> {
+                val videoSlug = videoRootCategory?.slug
+                if (videoSlug != null && state.selectedCategory != videoSlug) {
+                    vm.selectCategory(videoSlug)
+                }
+            }
+        }
+    }
 
     LaunchedEffect(sharedImageUri) {
         val uri = sharedImageUri ?: return@LaunchedEffect
@@ -324,16 +368,47 @@ private fun PromptAllApp(
             AboutScreen(onBack = { showAbout = false })
         } else if (detailPrompt != null) {
             val activePrompt = requireNotNull(detailPrompt)
+            val categoryHint = activePrompt.resolvedCategoryHint()
+            val hintedSlug = categoryHint?.slug?.trim()?.takeIf { it.isNotEmpty() }
+            val directSlug = activePrompt.categorySlug?.trim()?.takeIf { it.isNotEmpty() }
+            val knownHintCategory = state.categories.firstOrNull { it.slug == hintedSlug }
+            val knownDirectCategory = state.categories.firstOrNull { it.slug == directSlug }
+            val detailCategorySlug = knownHintCategory?.slug
+                ?: knownDirectCategory?.slug
+                ?: detailSourceCategory
+                ?: hintedSlug
+                ?: directSlug
+            val detailCategory = state.categories.firstOrNull { it.slug == detailCategorySlug }
+            val detailCategoryLabel = categoryHint?.name
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?: activePrompt.categoryName
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+                ?: detailCategory?.name
+            val detailAiModelLabel = activePrompt.resolvedAiModelLabel()
+
             BackHandler { closePromptDetail() }
             PromptDetailScreen(
                 item = activePrompt,
                 sourceCategory = detailSourceCategory,
+                aiModelLabel = detailAiModelLabel,
+                categoryLabel = detailCategoryLabel,
+                categorySlug = detailCategorySlug,
                 favorite = activePrompt.id in state.favoriteIds,
                 similarItems = state.similarPrompts.items,
                 similarLoading = state.similarPrompts.loading,
                 similarError = state.similarPrompts.error,
                 onBack = closePromptDetail,
                 onFavorite = { vm.toggleFavorite(activePrompt) },
+                onCategoryClick = { slug ->
+                    detailPrompt = null
+                    detailSourceCategory = null
+                    detailHistory = emptyList()
+                    vm.clearSimilarPrompts()
+                    vm.openCategory(slug)
+                    selected = 3
+                },
                 onRetrySimilar = { vm.loadSimilarPrompts(activePrompt, detailSourceCategory) },
                 onSimilarClick = openSimilarDetail,
             )
@@ -344,8 +419,12 @@ private fun PromptAllApp(
 
             when (selected) {
                 0 -> FeedScreen(
-                    title = "پرامپت‌های آماده",
-                    subtitle = "برای ساخت تصاویر با هوش مصنوعی",
+                    title = if (homeContentTabIndex == 0) "پرامپت‌های تصویری" else "پرامپت‌های ویدئویی",
+                    subtitle = if (homeContentTabIndex == 0) {
+                        "ایده‌های آماده برای ساخت تصویر با هوش مصنوعی"
+                    } else {
+                        "پرامپت‌های آماده برای ساخت ویدئو با هوش مصنوعی"
+                    },
                     items = homeFeed.items,
                     favoriteIds = state.favoriteIds,
                     loading = homeFeed.loading,
@@ -374,10 +453,28 @@ private fun PromptAllApp(
                     homeMode = state.homeMode,
                     onShowLatest = vm::showLatestPrompts,
                     onShowRandom = vm::showRandomPrompts,
-                    categories = state.categories,
+                    categories = state.categories.filterNot { category ->
+                        category.name.contains("ویدئو", ignoreCase = true) ||
+                            category.name.contains("ویدیو", ignoreCase = true) ||
+                            category.slug.contains("video", ignoreCase = true)
+                    },
                     categoriesLoading = state.categoriesLoading,
                     selectedCategory = state.selectedCategory,
                     onCategorySelected = vm::selectCategory,
+                    homeContentTab = HomeContentTab.entries[
+                        homeContentTabIndex.coerceIn(0, HomeContentTab.entries.lastIndex)
+                    ],
+                    onHomeContentTabSelected = { tab ->
+                        homeContentTabIndex = tab.ordinal
+                        when (tab) {
+                            HomeContentTab.VISUAL -> {
+                                visualRootCategory?.slug?.let(vm::selectCategory)
+                            }
+                            HomeContentTab.VIDEO -> {
+                                videoRootCategory?.slug?.let(vm::selectCategory)
+                            }
+                        }
+                    },
                     galleryMode = galleryMode,
                     galleryState = homeGalleryState,
                     onGalleryModeToggle = {
@@ -531,6 +628,8 @@ private fun FeedScreen(
     categoriesLoading: Boolean = false,
     selectedCategory: String? = null,
     onCategorySelected: (String?) -> Unit = {},
+    homeContentTab: HomeContentTab? = null,
+    onHomeContentTabSelected: ((HomeContentTab) -> Unit)? = null,
     galleryMode: Boolean = false,
     galleryState: LazyStaggeredGridState? = null,
     onGalleryModeToggle: (() -> Unit)? = null,
@@ -565,6 +664,8 @@ private fun FeedScreen(
             categoriesLoading = categoriesLoading,
             selectedCategory = selectedCategory,
             onCategorySelected = onCategorySelected,
+            homeContentTab = homeContentTab,
+            onHomeContentTabSelected = onHomeContentTabSelected,
             galleryMode = galleryMode,
             externalGalleryState = galleryState,
             onGalleryModeToggle = onGalleryModeToggle,
@@ -611,6 +712,8 @@ private fun FeedContent(
     categoriesLoading: Boolean,
     selectedCategory: String?,
     onCategorySelected: (String?) -> Unit,
+    homeContentTab: HomeContentTab?,
+    onHomeContentTabSelected: ((HomeContentTab) -> Unit)?,
     galleryMode: Boolean,
     externalGalleryState: LazyStaggeredGridState?,
     onGalleryModeToggle: (() -> Unit)?,
@@ -632,23 +735,25 @@ private fun FeedContent(
             title = title,
             subtitle = subtitle,
             onSearchClick = onSearchClick,
+            onImageSearchClick = onImageSearchClick,
             galleryMode = galleryMode,
             onGalleryModeToggle = onGalleryModeToggle,
             onBackClick = onBackClick,
         )
         if (onSearchClick != null) {
-            CategoryBar(
-                categories = categories,
-                loading = categoriesLoading,
-                selectedCategory = selectedCategory,
-                onSelected = onCategorySelected,
-            )
-            AnimatedVisibility(
-                visible = !feedHasScrolled,
-                enter = fadeIn(animationSpec = tween(180)) + expandVertically(animationSpec = tween(240)),
-                exit = fadeOut(animationSpec = tween(140)) + shrinkVertically(animationSpec = tween(220)),
-            ) {
-                HomeImageSearchHero(onClick = onImageSearchClick ?: onSearchClick)
+            if (homeContentTab != null && onHomeContentTabSelected != null) {
+                HomeContentTabs(
+                    selected = homeContentTab,
+                    onSelected = onHomeContentTabSelected,
+                )
+            }
+            if (homeContentTab != HomeContentTab.VIDEO) {
+                CategoryBar(
+                    categories = categories,
+                    loading = categoriesLoading,
+                    selectedCategory = selectedCategory,
+                    onSelected = onCategorySelected,
+                )
             }
         }
         if (newPromptCount > 0) {
@@ -709,7 +814,7 @@ private fun FeedContent(
                             start = 10.dp,
                             end = 10.dp,
                             top = 2.dp,
-                            bottom = 118.dp,
+                            bottom = 96.dp,
                         ),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalItemSpacing = 8.dp,
@@ -743,7 +848,7 @@ private fun FeedContent(
                             start = 14.dp,
                             end = 14.dp,
                             top = 4.dp,
-                            bottom = 118.dp,
+                            bottom = 96.dp,
                         ),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
@@ -767,76 +872,83 @@ private fun FeedContent(
 }
 
 @Composable
-private fun HomeImageSearchHero(onClick: () -> Unit) {
+private fun HomeContentTabs(
+    selected: HomeContentTab,
+    onSelected: (HomeContentTab) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 2.dp),
+        shape = RoundedCornerShape(18.dp),
+        color = Color(0xD90E0F13),
+        border = BorderStroke(1.dp, Color(0xFF25272E)),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            HomeContentTabButton(
+                modifier = Modifier.weight(1f),
+                title = "تصویری",
+                selected = selected == HomeContentTab.VISUAL,
+                icon = {
+                    Icon(
+                        Icons.Default.ImageSearch,
+                        null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                },
+                onClick = { onSelected(HomeContentTab.VISUAL) },
+            )
+            HomeContentTabButton(
+                modifier = Modifier.weight(1f),
+                title = "ویدئو",
+                selected = selected == HomeContentTab.VIDEO,
+                icon = {
+                    Icon(
+                        Icons.Default.Videocam,
+                        null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                },
+                onClick = { onSelected(HomeContentTab.VIDEO) },
+            )
+        }
+    }
+    Spacer(Modifier.height(8.dp))
+}
+
+@Composable
+private fun HomeContentTabButton(
+    modifier: Modifier,
+    title: String,
+    selected: Boolean,
+    icon: @Composable () -> Unit,
+    onClick: () -> Unit,
+) {
     Surface(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 14.dp),
-        shape = RoundedCornerShape(24.dp),
-        color = Color(0xFF15101D),
-        border = BorderStroke(1.dp, Color(0xFF432A64)),
+        modifier = modifier.height(44.dp),
+        shape = RoundedCornerShape(14.dp),
+        color = if (selected) Color(0xFF2A173D) else Color.Transparent,
+        contentColor = if (selected) Color(0xFFD6A8FF) else Color(0xFF9A9CA4),
+        border = if (selected) {
+            BorderStroke(1.dp, Color(0xFF70449A))
+        } else {
+            BorderStroke(1.dp, Color.Transparent)
+        },
     ) {
-        Box(
-            modifier = Modifier.fillMaxWidth().background(
-                Brush.linearGradient(
-                    listOf(Color(0xFF1C1228), Color(0xFF111218), Color(0xFF0E1014))
-                )
-            )
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 15.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Surface(
-                    modifier = Modifier.size(54.dp),
-                    shape = RoundedCornerShape(18.dp),
-                    color = Color(0xFF251638),
-                    contentColor = PurpleSoft,
-                    border = BorderStroke(1.dp, Color(0xFF5B377E)),
-                ) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.ImageSearch, null, Modifier.size(28.dp))
-                    }
-                }
-                Column(
-                    modifier = Modifier.weight(1f),
-                    horizontalAlignment = Alignment.End,
-                ) {
-                    Text(
-                        "عکس دارید؟ پرامپتش را پیدا کنید",
-                        modifier = Modifier.fillMaxWidth(),
-                        color = Color.White,
-                        fontSize = 15.sp,
-                        lineHeight = 21.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        textAlign = TextAlign.Right,
-                    )
-                    Spacer(Modifier.height(3.dp))
-                    Text(
-                        "یک تصویر انتخاب کنید؛ PromptAll بین پرامپت‌ها جستجو می‌کند",
-                        modifier = Modifier.fillMaxWidth(),
-                        color = Color(0xFFA5A1AC),
-                        fontSize = 10.sp,
-                        lineHeight = 15.sp,
-                        textAlign = TextAlign.Right,
-                    )
-                    Spacer(Modifier.height(7.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            "شروع جستجو",
-                            color = PurpleSoft,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Spacer(Modifier.width(5.dp))
-                        Icon(Icons.Default.Search, null, Modifier.size(15.dp), tint = PurpleSoft)
-                    }
-                }
-            }
+            icon()
+            Spacer(Modifier.width(7.dp))
+            Text(
+                title,
+                fontSize = 12.sp,
+                fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.Medium,
+            )
         }
     }
 }
@@ -945,16 +1057,20 @@ private fun LatestPromptCard(
                     contentColor = PurpleSoft,
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         Icon(
                             if (copied) Icons.Default.Check else Icons.Default.ContentCopy,
                             null,
-                            Modifier.size(13.dp),
+                            Modifier.size(15.dp),
                         )
-                        Text(if (copied) "کپی شد" else "کپی", fontSize = 9.sp)
+                        Text(
+                            if (copied) "کپی شد" else "کپی",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
                     }
                 }
             }
@@ -1037,6 +1153,13 @@ private fun CategoryBar(
     selectedCategory: String?,
     onSelected: (String?) -> Unit,
 ) {
+    val visualRootSlug = categories.firstOrNull { category ->
+        category.slug.equals("visual-prompts", ignoreCase = true) ||
+            category.name.contains("پرامپت‌های تصویری", ignoreCase = true) ||
+            category.name.contains("پرامپت های تصویری", ignoreCase = true)
+    }?.slug
+    val visibleCategories = categories.filterNot { it.slug == visualRootSlug }
+
     LazyRow(
         modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
         contentPadding = PaddingValues(horizontal = 14.dp),
@@ -1046,11 +1169,11 @@ private fun CategoryBar(
         item(key = "all") {
             CategoryChip(
                 text = "همه",
-                selected = selectedCategory == null,
-                onClick = { onSelected(null) },
+                selected = selectedCategory == null || selectedCategory == visualRootSlug,
+                onClick = { onSelected(visualRootSlug) },
             )
         }
-        items(categories, key = { it.id }) { category ->
+        items(visibleCategories, key = { it.id }) { category ->
             CategoryChip(
                 text = category.name,
                 selected = selectedCategory == category.slug,
@@ -1125,7 +1248,7 @@ private fun CategoriesScreen(
         ) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 118.dp),
+                contentPadding = PaddingValues(bottom = 96.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 item(key = "trending-title") {
@@ -1406,13 +1529,14 @@ private fun AppHeader(
     title: String,
     subtitle: String,
     onSearchClick: (() -> Unit)?,
+    onImageSearchClick: (() -> Unit)? = null,
     galleryMode: Boolean = false,
     onGalleryModeToggle: (() -> Unit)? = null,
     onBackClick: (() -> Unit)? = null,
     onInfoClick: (() -> Unit)? = null,
 ) {
     Row(
-        Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 12.dp),
+        Modifier.fillMaxWidth().padding(start = 15.dp, end = 15.dp, top = 11.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (onBackClick != null) {
@@ -1433,12 +1557,22 @@ private fun AppHeader(
             }
             Spacer(Modifier.width(9.dp))
         }
+        if (onImageSearchClick != null) {
+            HeaderCircleButton(
+                onClick = onImageSearchClick,
+                contentDescription = "جستجو با عکس",
+                accent = true,
+            ) {
+                Icon(Icons.Default.ImageSearch, null, Modifier.size(22.dp), tint = PurpleSoft)
+            }
+            Spacer(Modifier.width(8.dp))
+        }
         if (onSearchClick != null) {
             HeaderCircleButton(
                 onClick = onSearchClick,
                 contentDescription = "جست‌وجو",
             ) {
-                Icon(Icons.Default.Search, null, Modifier.size(25.dp), tint = Color.White)
+                Icon(Icons.Default.Search, null, Modifier.size(23.dp), tint = Color.White)
             }
             if (onGalleryModeToggle != null) {
                 Spacer(Modifier.width(9.dp))
@@ -1460,17 +1594,17 @@ private fun AppHeader(
             Text(
                 title,
                 color = Color.White,
-                fontSize = 24.sp,
-                lineHeight = 31.sp,
-                fontWeight = FontWeight.ExtraBold,
+                fontSize = 22.sp,
+                lineHeight = 29.sp,
+                fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Right,
             )
             Spacer(Modifier.height(3.dp))
             Text(
                 subtitle,
                 color = MutedText,
-                fontSize = 13.sp,
-                lineHeight = 18.sp,
+                fontSize = 11.sp,
+                lineHeight = 16.sp,
                 textAlign = TextAlign.Right,
             )
         }
@@ -1481,14 +1615,18 @@ private fun AppHeader(
 private fun HeaderCircleButton(
     onClick: () -> Unit,
     contentDescription: String,
+    accent: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     Surface(
         onClick = onClick,
-        modifier = Modifier.size(46.dp),
+        modifier = Modifier.size(43.dp),
         shape = CircleShape,
-        color = Color(0xFF17191D),
-        border = BorderStroke(1.dp, Color(0xFF24262B)),
+        color = if (accent) Color(0xFF21152F) else Color(0xFF17191D),
+        border = BorderStroke(
+            1.dp,
+            if (accent) Color(0xFF5A397B) else Color(0xFF24262B),
+        ),
     ) {
         Box(
             modifier = Modifier.fillMaxSize(),
@@ -1856,7 +1994,7 @@ private fun ImageSearchPanel(
                                 color = Color(0xD9050608),
                             ) {
                                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    Icon(Icons.Default.Close, null, Modifier.size(16.dp), tint = Color.White)
+                                    Icon(Icons.Default.Close, null, Modifier.size(18.dp), tint = Color.White)
                                 }
                             }
                         }
@@ -2301,7 +2439,7 @@ private fun ImageSearchResultCard(
                         Icon(
                             if (favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                             null,
-                            Modifier.size(16.dp),
+                            Modifier.size(18.dp),
                             tint = if (favorite) Color(0xFFFF5872) else Color.White,
                         )
                     }
@@ -2433,19 +2571,19 @@ private fun PromptCard(
                     ),
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Icon(
                             if (copied) Icons.Default.Check else Icons.Default.ContentCopy,
                             null,
-                            Modifier.size(16.dp),
+                            Modifier.size(18.dp),
                         )
                         Text(
                             if (copied) "کپی شد" else "کپی پرامپت",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.ExtraBold,
                         )
                     }
                 }
@@ -2526,26 +2664,31 @@ private fun GalleryPromptCard(
                     copyPrompt(context, item.promptText)
                     copied = true
                 },
-                modifier = Modifier.align(Alignment.BottomCenter).padding(9.dp),
-                shape = RoundedCornerShape(50),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(9.dp)
+                    .fillMaxWidth(0.86f),
+                shape = RoundedCornerShape(16.dp),
                 color = Color(0xD91A1428),
                 contentColor = PurpleSoft,
                 border = BorderStroke(1.dp, Color(0xFF563878)),
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 9.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    horizontalArrangement = Arrangement.Center,
                 ) {
                     Icon(
                         if (copied) Icons.Default.Check else Icons.Default.ContentCopy,
                         null,
-                        Modifier.size(15.dp),
+                        Modifier.size(17.dp),
                     )
                     Text(
                         if (copied) "کپی شد" else "کپی پرامپت",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.ExtraBold,
                     )
                 }
             }
@@ -2581,12 +2724,16 @@ private val AiDestinations = listOf(
 private fun PromptDetailScreen(
     item: PromptDto,
     sourceCategory: String?,
+    aiModelLabel: String?,
+    categoryLabel: String?,
+    categorySlug: String?,
     favorite: Boolean,
     similarItems: List<PromptDto>,
     similarLoading: Boolean,
     similarError: String?,
     onBack: () -> Unit,
     onFavorite: () -> Unit,
+    onCategoryClick: (String) -> Unit,
     onRetrySimilar: () -> Unit,
     onSimilarClick: (PromptDto) -> Unit,
 ) {
@@ -2674,11 +2821,27 @@ private fun PromptDetailScreen(
                         horizontalArrangement = Arrangement.End,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        if (isVideoPrompt) {
-                            DetailBadge(text = "ویدئویی", iconVideo = true)
-                            Spacer(Modifier.width(7.dp))
+                        if (!aiModelLabel.isNullOrBlank()) {
+                            DetailBadge(text = aiModelLabel)
+                            if (!categoryLabel.isNullOrBlank() && !categorySlug.isNullOrBlank()) {
+                                Spacer(Modifier.width(7.dp))
+                                DetailBadge(
+                                    text = categoryLabel.orEmpty(),
+                                    iconCategory = true,
+                                    onClick = { onCategoryClick(categorySlug.orEmpty()) },
+                                )
+                            }
+                        } else if (!categoryLabel.isNullOrBlank() && !categorySlug.isNullOrBlank()) {
+                            DetailBadge(
+                                text = categoryLabel.orEmpty(),
+                                iconCategory = true,
+                                onClick = { onCategoryClick(categorySlug.orEmpty()) },
+                            )
+                        } else if (isVideoPrompt) {
+                            DetailBadge(text = "پرامپت ویدئویی", iconVideo = true)
+                        } else {
+                            DetailBadge(text = "پرامپت")
                         }
-                        DetailBadge(text = "پرامپت آماده")
                     }
                     Spacer(Modifier.height(9.dp))
                     Text(
@@ -2863,24 +3026,37 @@ private fun PromptDetailScreen(
 private fun DetailBadge(
     text: String,
     iconVideo: Boolean = false,
+    iconCategory: Boolean = false,
+    onClick: (() -> Unit)? = null,
 ) {
     Surface(
+        modifier = Modifier.then(
+            if (onClick != null) {
+                Modifier.clickable(role = Role.Button, onClick = onClick)
+            } else {
+                Modifier
+            }
+        ),
         shape = RoundedCornerShape(50),
-        color = Color(0xC51A1326),
-        contentColor = PurpleSoft,
-        border = BorderStroke(1.dp, Color(0x665A397B)),
+        color = Color(0xD51A1326),
+        contentColor = Color(0xFFD6A8FF),
+        border = BorderStroke(1.dp, Color(0x775A397B)),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(5.dp),
         ) {
-            if (iconVideo) {
-                Icon(Icons.Default.Videocam, null, Modifier.size(14.dp))
-            } else {
-                Icon(Icons.Default.AutoAwesome, null, Modifier.size(14.dp))
-            }
-            Text(text, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Icon(
+                when {
+                    iconVideo -> Icons.Default.Videocam
+                    iconCategory -> Icons.Default.Category
+                    else -> Icons.Default.AutoAwesome
+                },
+                null,
+                Modifier.size(14.dp),
+            )
+            Text(text, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
         }
     }
 }
@@ -2947,7 +3123,7 @@ private fun AiDestinationCard(
                 Icon(
                     Icons.Default.OpenInNew,
                     null,
-                    Modifier.size(16.dp),
+                    Modifier.size(18.dp),
                     tint = Color(0xFF777980),
                 )
                 Spacer(Modifier.weight(1f))
@@ -3050,7 +3226,7 @@ private fun NewPromptsBanner(count: Int, onClick: () -> Unit) {
 private fun PromptSkeletonList(modifier: Modifier = Modifier) {
     LazyColumn(
         modifier = modifier,
-        contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = 118.dp),
+        contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
         userScrollEnabled = false,
     ) {
@@ -3088,68 +3264,91 @@ private fun FloatingBottomBar(
     onCenterClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Surface(
-        modifier = modifier.fillMaxWidth(0.94f).widthIn(max = 450.dp)
-            .navigationBarsPadding().padding(bottom = 8.dp)
-            .height(64.dp)
-            .shadow(14.dp, RoundedCornerShape(24.dp)),
-        shape = RoundedCornerShape(24.dp),
-        color = Color(0xF5111217),
-        border = BorderStroke(1.dp, Color(0xFF292B33)),
+    Box(
+        modifier = modifier
+            .fillMaxWidth(0.86f)
+            .widthIn(max = 395.dp)
+            .navigationBarsPadding()
+            .padding(bottom = 7.dp)
+            .height(74.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 5.dp, vertical = 5.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(58.dp)
+                .align(Alignment.BottomCenter)
+                .shadow(16.dp, RoundedCornerShape(24.dp)),
+            shape = RoundedCornerShape(24.dp),
+            color = Color(0xF3121318),
+            border = BorderStroke(1.dp, Color(0xFF2A2C33)),
         ) {
-            BottomTab(tabs[0], selected == 3) { onSelected(0) }
-            BottomTab(tabs[1], selected == 2) { onSelected(1) }
+            Row(
+                modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                BottomTab(tabs[0], selected == 3) { onSelected(0) }
+                BottomTab(tabs[1], selected == 2) { onSelected(1) }
+                Spacer(Modifier.width(66.dp))
+                BottomTab(tabs[2], selected == 1) { onSelected(2) }
+                BottomTab(tabs[3], selected == 0) { onSelected(3) }
+            }
+        }
 
+        Surface(
+            onClick = onCenterClick,
+            modifier = Modifier
+                .size(64.dp)
+                .align(Alignment.TopCenter)
+                .shadow(22.dp, CircleShape),
+            shape = CircleShape,
+            color = Purple,
+            contentColor = Color.White,
+            border = BorderStroke(1.dp, Color(0xFFC48AFF)),
+        ) {
             Box(
-                modifier = Modifier.weight(0.86f).fillMaxHeight(),
+                Modifier.background(
+                    Brush.linearGradient(
+                        listOf(Color(0xFFBC66FF), Color(0xFF8A45EC))
+                    )
+                ),
                 contentAlignment = Alignment.Center,
             ) {
-                Surface(
-                    onClick = onCenterClick,
-                    modifier = Modifier.size(48.dp),
-                    shape = CircleShape,
-                    color = Purple,
-                    contentColor = Color.White,
-                    border = BorderStroke(1.dp, Color(0xFFB978FF)),
-                ) {
-                    Box(
-                        Modifier.background(
-                            Brush.linearGradient(listOf(Color(0xFFB45EFF), Color(0xFF7B3FDF)))
-                        ),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(Icons.Default.Refresh, "پیشنهادهای تازه", Modifier.size(24.dp))
-                    }
-                }
+                Icon(
+                    Icons.Default.Refresh,
+                    "پیشنهادهای تازه",
+                    Modifier.size(29.dp),
+                )
             }
-
-            BottomTab(tabs[2], selected == 1) { onSelected(2) }
-            BottomTab(tabs[3], selected == 0) { onSelected(3) }
         }
     }
 }
 
 @Composable
 private fun RowScope.BottomTab(tab: Tab, selected: Boolean, onClick: () -> Unit) {
-    val color = if (selected) PurpleSoft else Color(0xFF8F9098)
+    val color = if (selected) Color(0xFFD39EFF) else Color(0xFF8E9098)
     Column(
-        modifier = Modifier.weight(1f).fillMaxHeight()
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxHeight()
             .clip(RoundedCornerShape(17.dp))
-            .background(if (selected) Color(0xFF24172F) else Color.Transparent)
             .clickable(role = Role.Tab, onClickLabel = tab.title, onClick = onClick),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        tab.icon(Modifier.size(if (selected) 22.dp else 21.dp), color)
-        Spacer(Modifier.height(3.dp))
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .background(if (selected) Color(0xFF24172F) else Color.Transparent)
+                .padding(horizontal = 10.dp, vertical = 4.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            tab.icon(Modifier.size(if (selected) 21.dp else 20.dp), color)
+        }
+        Spacer(Modifier.height(1.dp))
         Text(
             tab.title,
             color = color,
-            fontSize = 9.sp,
+            fontSize = 8.5.sp,
             fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.Medium,
             maxLines = 1,
         )
@@ -3297,6 +3496,143 @@ private fun sharePrompt(context: Context, item: PromptDto) {
         putExtra(Intent.EXTRA_TEXT, shareText)
     }
     context.startActivity(Intent.createChooser(intent, "اشتراک‌گذاری پرامپت"))
+}
+
+private data class PromptCategoryHint(
+    val name: String? = null,
+    val slug: String? = null,
+)
+
+private fun PromptDto.resolvedCategoryHint(): PromptCategoryHint? {
+    val directName = categoryName?.trim()?.takeIf { it.isNotEmpty() }
+    val directSlug = categorySlug?.trim()?.takeIf { it.isNotEmpty() }
+    if (directName != null || directSlug != null) {
+        return PromptCategoryHint(name = directName, slug = directSlug)
+    }
+
+    val hints = buildList {
+        fun collect(element: com.google.gson.JsonElement?) {
+            if (element == null || element.isJsonNull) return
+            when {
+                element.isJsonPrimitive -> {
+                    runCatching { element.asString }
+                        .getOrNull()
+                        ?.trim()
+                        ?.takeIf { it.isNotEmpty() }
+                        ?.let { add(PromptCategoryHint(slug = it)) }
+                }
+                element.isJsonArray -> {
+                    element.asJsonArray.forEach(::collect)
+                }
+                element.isJsonObject -> {
+                    val obj = element.asJsonObject
+                    val name = sequenceOf("name", "title", "label")
+                        .mapNotNull { key ->
+                            obj.get(key)
+                                ?.takeIf { it.isJsonPrimitive }
+                                ?.let { runCatching { it.asString }.getOrNull() }
+                                ?.trim()
+                                ?.takeIf { it.isNotEmpty() }
+                        }
+                        .firstOrNull()
+                    val slug = sequenceOf("slug", "key", "value")
+                        .mapNotNull { key ->
+                            obj.get(key)
+                                ?.takeIf { it.isJsonPrimitive }
+                                ?.let { runCatching { it.asString }.getOrNull() }
+                                ?.trim()
+                                ?.takeIf { it.isNotEmpty() }
+                        }
+                        .firstOrNull()
+                    if (name != null || slug != null) {
+                        add(PromptCategoryHint(name = name, slug = slug))
+                    } else {
+                        obj.entrySet().forEach { (_, value) -> collect(value) }
+                    }
+                }
+            }
+        }
+
+        collect(categoryRaw)
+        collect(categoriesRaw)
+    }
+
+    return hints.lastOrNull { hint ->
+        val slug = hint.slug.orEmpty()
+        slug.isNotBlank() && !slug.equals("visual-prompts", ignoreCase = true)
+    } ?: hints.lastOrNull()
+}
+
+private fun PromptDto.resolvedAiModelLabel(): String? {
+    val candidates = mutableListOf<String>()
+    aiModel?.trim()?.takeIf { it.isNotEmpty() }?.let(candidates::add)
+
+    aiPrompt?.let { raw ->
+        when {
+            raw.isJsonPrimitive -> {
+                runCatching { raw.asString }
+                    .getOrNull()
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.let(candidates::add)
+            }
+            raw.isJsonArray -> {
+                raw.asJsonArray.forEach { element ->
+                    when {
+                        element.isJsonPrimitive -> {
+                            runCatching { element.asString }
+                                .getOrNull()
+                                ?.trim()
+                                ?.takeIf { it.isNotEmpty() }
+                                ?.let(candidates::add)
+                        }
+                        element.isJsonObject -> {
+                            element.asJsonObject.entrySet().forEach { (key, value) ->
+                                val enabled = value.isJsonPrimitive &&
+                                    runCatching { value.asBoolean }.getOrDefault(false)
+                                if (enabled) candidates.add(key)
+                            }
+                        }
+                    }
+                }
+            }
+            raw.isJsonObject -> {
+                raw.asJsonObject.entrySet().forEach { (key, value) ->
+                    val enabled = when {
+                        value.isJsonPrimitive && value.asJsonPrimitive.isBoolean ->
+                            runCatching { value.asBoolean }.getOrDefault(false)
+                        value.isJsonPrimitive && value.asJsonPrimitive.isString ->
+                            runCatching { value.asString }.getOrDefault("").isNotBlank()
+                        else -> false
+                    }
+                    if (enabled) candidates.add(key)
+                }
+            }
+        }
+    }
+
+    return candidates
+        .flatMap { it.split(',', '|', ';') }
+        .map { normalizeAiModelName(it) }
+        .firstOrNull { it.isNotBlank() }
+}
+
+private fun normalizeAiModelName(raw: String): String {
+    val cleaned = raw.trim()
+    val key = cleaned.lowercase()
+        .replace("_", "")
+        .replace("-", "")
+        .replace(" ", "")
+    return when {
+        "chatgpt" in key || key == "gpt" -> "ChatGPT"
+        "gemini" in key -> "Gemini"
+        "grok" in key || "grock" in key -> "Grok"
+        "sora" in key -> "Sora"
+        "midjourney" in key || "midjourney" in cleaned.lowercase() -> "Midjourney"
+        "flux" in key -> "FLUX"
+        "ideogram" in key -> "Ideogram"
+        else -> cleaned
+    }
 }
 
 private fun Favorite.toPrompt() = PromptDto(

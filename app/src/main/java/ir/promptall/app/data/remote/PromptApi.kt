@@ -1,5 +1,6 @@
 package ir.promptall.app.data.remote
 
+import com.google.gson.JsonElement
 import com.google.gson.annotations.SerializedName
 import retrofit2.http.Body
 import retrofit2.http.GET
@@ -17,6 +18,12 @@ data class PromptDto(
     val title: String,
     @SerializedName("prompt_text") val promptText: String,
     val image: PromptImage,
+    @SerializedName("ai_model") val aiModel: String? = null,
+    @SerializedName("aiprompt") val aiPrompt: JsonElement? = null,
+    @SerializedName("category_name") val categoryName: String? = null,
+    @SerializedName("category_slug") val categorySlug: String? = null,
+    @SerializedName("category") val categoryRaw: JsonElement? = null,
+    @SerializedName("categories") val categoriesRaw: JsonElement? = null,
 )
 
 data class PromptPage(
