@@ -8,6 +8,7 @@ import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.Multipart
 import retrofit2.http.POST
+import retrofit2.http.Query
 import retrofit2.http.Part
 
 interface AiImageApi {
@@ -34,6 +35,12 @@ interface AiImageApi {
         @Header("X-PromptAll-App-Token") token: String,
         @Body request: ConsumedPurchaseRequest,
     ): BasicSuccessResponse
+
+    @GET("wp-json/promptall-ai/v1/app/purchase/status")
+    suspend fun purchaseStatus(
+        @Header("X-PromptAll-App-Token") token: String,
+        @Query("purchase_id") purchaseId: Long,
+    ): PurchaseStatusResponse
 
     @Multipart
     @POST("wp-json/promptall-ai/v1/app/generate")
@@ -111,6 +118,22 @@ data class BasicSuccessResponse(
     val verified: Boolean = false,
     val consumed: Boolean = false,
     val needsConsume: Boolean = false,
+)
+
+data class PurchaseStatusResponse(
+    val success: Boolean = false,
+    val purchaseId: Long = 0,
+    val postId: Long = 0,
+    val status: String = "",
+    val paid: Boolean = false,
+    val canGenerate: Boolean = false,
+    val generating: Boolean = false,
+    val completed: Boolean = false,
+    val retryable: Boolean = false,
+    val generationId: Long = 0,
+    val imageUrl: String = "",
+    val errorMessage: String = "",
+    val profile: AiProfile? = null,
 )
 
 data class GenerateImageResponse(

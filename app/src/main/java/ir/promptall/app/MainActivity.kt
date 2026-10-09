@@ -380,6 +380,10 @@ private fun PromptAllApp(
                 vm = aiVm,
                 onBack = { aiGeneratePrompt = null },
                 onOpenProfile = { aiGeneratePrompt = null; showAiProfile = true },
+                onOpenPrompt = { previous ->
+                    aiGeneratePrompt = null
+                    openPromptDetail(previous, previous.categorySlug)
+                },
             )
         } else if (showAiProfile) {
             BackHandler { showAiProfile = false }
@@ -459,6 +463,7 @@ private fun PromptAllApp(
                     onLoadMore = vm::loadMoreHome,
                     onFavorite = vm::toggleFavorite,
                     onOpenPrompt = { item -> openPromptDetail(item, state.selectedCategory) },
+                    onGeneratePrompt = { item -> aiGeneratePrompt = item },
                     onSearchClick = {
                         searchImageFirst = false
                         selected = 1
@@ -522,6 +527,7 @@ private fun PromptAllApp(
                     onLoadMore = vm::loadMoreSearch,
                     onFavorite = vm::toggleFavorite,
                     onOpenPrompt = { item -> openPromptDetail(item, null) },
+                    onGeneratePrompt = { item -> aiGeneratePrompt = item },
                     imageSearch = state.imageSearch,
                     onSearchImage = { uri ->
                         vm.setQuery("")
@@ -547,6 +553,7 @@ private fun PromptAllApp(
                     onLoadMore = {},
                     onFavorite = vm::toggleFavorite,
                     onOpenPrompt = { item -> openPromptDetail(item, null) },
+                    onGeneratePrompt = { item -> aiGeneratePrompt = item },
                     emptyText = "هنوز پرامپتی ذخیره نکرده‌اید.",
                 )
 
@@ -573,6 +580,7 @@ private fun PromptAllApp(
                             onLoadMore = vm::loadMoreCategory,
                             onFavorite = vm::toggleFavorite,
                             onOpenPrompt = { item -> openPromptDetail(item, activeSlug) },
+                            onGeneratePrompt = { item -> aiGeneratePrompt = item },
                             onBackClick = vm::closeCategory,
                         )
                     } else {
@@ -636,6 +644,7 @@ private fun FeedScreen(
     onLoadMore: () -> Unit,
     onFavorite: (PromptDto) -> Unit,
     onOpenPrompt: (PromptDto) -> Unit = {},
+    onGeneratePrompt: (PromptDto) -> Unit = {},
     onSearchClick: (() -> Unit)? = null,
     onImageSearchClick: (() -> Unit)? = null,
     emptyText: String = "پرامپتی برای نمایش وجود ندارد.",
@@ -673,6 +682,7 @@ private fun FeedScreen(
             onLoadMore = onLoadMore,
             onFavorite = onFavorite,
             onOpenPrompt = onOpenPrompt,
+            onGeneratePrompt = onGeneratePrompt,
             onSearchClick = onSearchClick,
             onImageSearchClick = onImageSearchClick,
             emptyText = emptyText,
@@ -722,6 +732,7 @@ private fun FeedContent(
     onLoadMore: () -> Unit,
     onFavorite: (PromptDto) -> Unit,
     onOpenPrompt: (PromptDto) -> Unit,
+    onGeneratePrompt: (PromptDto) -> Unit,
     onSearchClick: (() -> Unit)?,
     onImageSearchClick: (() -> Unit)?,
     emptyText: String,
@@ -815,6 +826,7 @@ private fun FeedContent(
                     onShowLatest = onShowLatest,
                     onShowRandom = onShowRandom,
                     onOpenPrompt = onOpenPrompt,
+                    onGeneratePrompt = onGeneratePrompt,
                 )
                 HomeFeedModeLabel(homeMode)
             }
@@ -856,6 +868,7 @@ private fun FeedContent(
                                 favorite = item.id in favoriteIds,
                                 onFavorite = { onFavorite(item) },
                                 onOpen = { onOpenPrompt(item) },
+                                onGenerate = { onGeneratePrompt(item) },
                             )
                             if (index == (items.lastIndex - 5).coerceAtLeast(0)) {
                                 LaunchedEffect(items.size) { onLoadMore() }
@@ -885,6 +898,7 @@ private fun FeedContent(
                                 favorite = item.id in favoriteIds,
                                 onFavorite = { onFavorite(item) },
                                 onOpen = { onOpenPrompt(item) },
+                                onGenerate = { onGeneratePrompt(item) },
                             )
                             if (index == (items.lastIndex - 3).coerceAtLeast(0)) {
                                 LaunchedEffect(items.size) { onLoadMore() }
@@ -988,6 +1002,7 @@ private fun LatestPromptsSection(
     onShowLatest: () -> Unit,
     onShowRandom: () -> Unit,
     onOpenPrompt: (PromptDto) -> Unit,
+    onGeneratePrompt: (PromptDto) -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 8.dp),
@@ -1037,7 +1052,11 @@ private fun LatestPromptsSection(
             }
         } else {
             items(latestItems, key = { it.id }) { item ->
-                LatestPromptCard(item = item, onOpen = { onOpenPrompt(item) })
+                LatestPromptCard(
+                    item = item,
+                    onOpen = { onOpenPrompt(item) },
+                    onGenerate = { onGeneratePrompt(item) },
+                )
             }
         }
     }
@@ -1047,6 +1066,7 @@ private fun LatestPromptsSection(
 private fun LatestPromptCard(
     item: PromptDto,
     onOpen: () -> Unit,
+    onGenerate: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     var copied by remember(item.id) { mutableStateOf(false) }
@@ -1098,6 +1118,20 @@ private fun LatestPromptCard(
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                         )
+                    }
+                }
+                if (item.supportsImageGeneration() && onGenerate != null) {
+                    Surface(
+                        onClick = onGenerate,
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(7.dp).size(34.dp),
+                        shape = CircleShape,
+                        color = Color(0xE56E35B5),
+                        contentColor = Color.White,
+                        border = BorderStroke(1.dp, Color(0xFF9A68D6)),
+                    ) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.AutoAwesome, "ساخت تصویر", Modifier.size(17.dp))
+                        }
                     }
                 }
             }
@@ -1697,6 +1731,7 @@ private fun SearchScreen(
     onLoadMore: () -> Unit,
     onFavorite: (PromptDto) -> Unit,
     onOpenPrompt: (PromptDto) -> Unit,
+    onGeneratePrompt: (PromptDto) -> Unit,
     imageSearch: ImageSearchUiState,
     onSearchImage: (Uri) -> Unit,
     onClearImageSearch: () -> Unit,
@@ -1883,6 +1918,7 @@ private fun SearchScreen(
                             favorite = item.id in favoriteIds,
                             onFavorite = { onFavorite(item) },
                             onOpen = { onOpenPrompt(item) },
+                            onGenerate = { onGeneratePrompt(item) },
                         )
                         if (index == (items.lastIndex - 3).coerceAtLeast(0)) {
                             LaunchedEffect(items.size) { onLoadMore() }
@@ -2502,12 +2538,18 @@ private fun ImageSearchResultCard(
     }
 }
 
+private fun PromptDto.supportsImageGeneration(): Boolean {
+    val haystack = "${title} ${categoryName.orEmpty()} ${categorySlug.orEmpty()}".lowercase()
+    return !(haystack.contains("video") || haystack.contains("ویدئو") || haystack.contains("ویدیو"))
+}
+
 @Composable
 private fun PromptCard(
     item: PromptDto,
     favorite: Boolean,
     onFavorite: () -> Unit,
     onOpen: () -> Unit,
+    onGenerate: () -> Unit,
 ) {
     val context = LocalContext.current
     var copied by remember(item.id) { mutableStateOf(false) }
@@ -2595,34 +2637,50 @@ private fun PromptCard(
                     textAlign = TextAlign.Left,
                 )
                 Spacer(Modifier.weight(1f))
-                Surface(
-                    onClick = {
-                        copyPrompt(context, item.promptText)
-                        copied = true
-                    },
-                    shape = RoundedCornerShape(14.dp),
-                    color = if (copied) Color(0xFF18251D) else Color(0xFF1B1326),
-                    contentColor = if (copied) Color(0xFF91D9A1) else PurpleSoft,
-                    border = BorderStroke(
-                        1.dp,
-                        if (copied) Color(0xFF31593A) else Color(0xFF4B3067),
-                    ),
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    Surface(
+                        onClick = {
+                            copyPrompt(context, item.promptText)
+                            copied = true
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(13.dp),
+                        color = if (copied) Color(0xFF18251D) else Color(0xFF17191F),
+                        contentColor = if (copied) Color(0xFF91D9A1) else Color(0xFFC9C4D0),
+                        border = BorderStroke(1.dp, if (copied) Color(0xFF31593A) else Color(0xFF33343B)),
                     ) {
-                        Icon(
-                            if (copied) Icons.Default.Check else Icons.Default.ContentCopy,
-                            null,
-                            Modifier.size(18.dp),
-                        )
-                        Text(
-                            if (copied) "کپی شد" else "کپی پرامپت",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                        ) {
+                            Icon(if (copied) Icons.Default.Check else Icons.Default.ContentCopy, null, Modifier.size(16.dp))
+                            Spacer(Modifier.width(5.dp))
+                            Text(if (copied) "کپی شد" else "کپی", fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    if (item.supportsImageGeneration()) {
+                        Surface(
+                            onClick = onGenerate,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(13.dp),
+                            color = Color(0xFF6E35B5),
+                            contentColor = Color.White,
+                            border = BorderStroke(1.dp, Color(0xFF9563D3)),
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 9.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                            ) {
+                                Icon(Icons.Default.AutoAwesome, null, Modifier.size(16.dp))
+                                Spacer(Modifier.width(5.dp))
+                                Text("بساز", fontSize = 10.5.sp, fontWeight = FontWeight.ExtraBold)
+                            }
+                        }
                     }
                 }
             }
@@ -2636,6 +2694,7 @@ private fun GalleryPromptCard(
     favorite: Boolean,
     onFavorite: () -> Unit,
     onOpen: () -> Unit,
+    onGenerate: () -> Unit,
 ) {
     val context = LocalContext.current
     var copied by remember(item.id) { mutableStateOf(false) }
@@ -2697,37 +2756,53 @@ private fun GalleryPromptCard(
                     tint = if (favorite) Color(0xFFFF5872) else Color.White,
                 )
             }
-            Surface(
-                onClick = {
-                    copyPrompt(context, item.promptText)
-                    copied = true
-                },
+            Row(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(9.dp)
-                    .fillMaxWidth(0.86f),
-                shape = RoundedCornerShape(16.dp),
-                color = Color(0xD91A1428),
-                contentColor = PurpleSoft,
-                border = BorderStroke(1.dp, Color(0xFF563878)),
+                    .padding(8.dp)
+                    .fillMaxWidth(0.92f),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 9.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center,
+                Surface(
+                    onClick = {
+                        copyPrompt(context, item.promptText)
+                        copied = true
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp),
+                    color = Color(0xE5161720),
+                    contentColor = if (copied) Color(0xFF91D9A1) else Color.White,
+                    border = BorderStroke(1.dp, Color(0xFF3A3B43)),
                 ) {
-                    Icon(
-                        if (copied) Icons.Default.Check else Icons.Default.ContentCopy,
-                        null,
-                        Modifier.size(17.dp),
-                    )
-                    Text(
-                        if (copied) "کپی شد" else "کپی پرامپت",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                    )
+                    Row(
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        Icon(if (copied) Icons.Default.Check else Icons.Default.ContentCopy, null, Modifier.size(15.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (copied) "کپی شد" else "کپی", fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                if (item.supportsImageGeneration()) {
+                    Surface(
+                        onClick = onGenerate,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(14.dp),
+                        color = Color(0xED6D34B4),
+                        contentColor = Color.White,
+                        border = BorderStroke(1.dp, Color(0xFF9765D4)),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                        ) {
+                            Icon(Icons.Default.AutoAwesome, null, Modifier.size(15.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("بساز", fontSize = 9.5.sp, fontWeight = FontWeight.ExtraBold)
+                        }
+                    }
                 }
             }
         }
@@ -2943,7 +3018,7 @@ private fun PromptDetailScreen(
             ) {
                 DetailSectionTitle(
                     title = "متن پرامپت",
-                    subtitle = "برای استفاده سریع، متن کامل را کپی کنید",
+                    subtitle = "متن‌های بلند داخل همین کادر اسکرول می‌شوند",
                 )
                 Spacer(Modifier.height(10.dp))
                 Surface(
@@ -2953,15 +3028,35 @@ private fun PromptDetailScreen(
                     border = BorderStroke(1.dp, CardBorder),
                 ) {
                     Column(Modifier.fillMaxWidth().padding(17.dp)) {
-                        Text(
-                            item.promptText,
-                            modifier = Modifier.fillMaxWidth(),
-                            color = Color(0xFFE3E3E7),
-                            fontSize = 13.sp,
-                            lineHeight = 21.sp,
-                            textAlign = TextAlign.Left,
-                        )
-                        Spacer(Modifier.height(16.dp))
+                        val promptScroll = rememberScrollState()
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 110.dp, max = 220.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color(0xFF0B0C10))
+                                .padding(13.dp)
+                                .verticalScroll(promptScroll),
+                        ) {
+                            Text(
+                                item.promptText,
+                                modifier = Modifier.fillMaxWidth(),
+                                color = Color(0xFFE3E3E7),
+                                fontSize = 13.sp,
+                                lineHeight = 21.sp,
+                                textAlign = TextAlign.Left,
+                            )
+                        }
+                        if (promptScroll.maxValue > 0) {
+                            Text(
+                                "برای دیدن ادامه متن داخل کادر بالا اسکرول کنید",
+                                modifier = Modifier.fillMaxWidth().padding(top = 7.dp),
+                                color = MutedText,
+                                fontSize = 8.5.sp,
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+                        Spacer(Modifier.height(14.dp))
                         Surface(
                             onClick = {
                                 copyPrompt(context, item.promptText)

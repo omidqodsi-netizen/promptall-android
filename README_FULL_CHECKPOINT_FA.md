@@ -1,3 +1,7 @@
+# Full Checkpoint v3.10.4
+
+پایه این بسته همان Full Source v3.10.3 است و هیچ فایل سورس قبلی حذف نشده است. تغییرات v3.10.4 شامل بازیابی timeout، چند Pending Purchase، دکمه ساخت روی کارت‌ها و اسکرول داخلی متن پرامپت است.
+
 # PromptAll Android v3.10.3 — FULL CHECKPOINT
 
 این بسته یک Patch نیست و کل سورس لازم برای Build اپلیکیشن را در خود دارد.

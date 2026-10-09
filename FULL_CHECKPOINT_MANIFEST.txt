@@ -1,21 +1,17 @@
-PromptAll Android v3.10.3 FULL CHECKPOINT
+PromptAll Android v3.10.4 FULL SOURCE
+Files: 53
 
-Base source: promptall-android-v3.9.1-ui-ux-full-source
-Base file count: 40
-Current file count before this manifest: 49
-Missing base files: 0
-
-All base files preserved: True
-
-FILES:
 .github/workflows/build-apk.yml
 CAFE_BAZAAR_SETUP_FA.md
+FULL_CHECKPOINT_MANIFEST.txt
 IMAGE_SEARCH_ARCHITECTURE.md
 MARKET_RELEASE.md
 README.md
 README_FULL_CHECKPOINT_FA.md
 RELEASE_V3.10.1_FA.md
 RELEASE_V3.10.2_FA.md
+RELEASE_V3.10.3_FA.md
+RELEASE_V3.10.4_FA.md
 RELEASE_V3.5.0.md
 RELEASE_V3.6.0.md
 RELEASE_V3.6.1.md
@@ -34,6 +30,7 @@ SMOKE_TEST_V3.8.0.md
 SMOKE_TEST_V3.9.0.md
 SMOKE_TEST_V3.9.1.md
 TEST_CHECKLIST_FA.md
+TEST_CHECKLIST_V3.10.4_FA.md
 UPLOAD_TO_GITHUB.md
 app/build.gradle.kts
 app/proguard-rules.pro
@@ -57,5 +54,3 @@ app/src/main/res/xml/file_paths.xml
 build.gradle.kts
 gradle.properties
 settings.gradle.kts
-
-RELEASE_V3.10.3_FA.md

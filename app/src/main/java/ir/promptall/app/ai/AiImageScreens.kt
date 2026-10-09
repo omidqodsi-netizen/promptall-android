@@ -227,6 +227,7 @@ fun AiGenerateScreen(
     vm: AiImageViewModel,
     onBack: () -> Unit,
     onOpenProfile: () -> Unit,
+    onOpenPrompt: (PromptDto) -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -262,8 +263,12 @@ fun AiGenerateScreen(
     }
     DisposableEffect(billing) { onDispose { billing.disconnect() } }
 
-    val pending = state.pendingPurchase?.takeIf { it.postId == prompt.id }
-    val otherPending = state.pendingPurchase?.takeIf { it.postId != prompt.id }
+    val pending = state.pendingPurchases
+        .filter { it.postId == prompt.id }
+        .maxByOrNull { it.createdAt }
+    val otherPending = state.pendingPurchases
+        .filter { it.postId != prompt.id }
+        .maxByOrNull { it.createdAt }
 
     fun finishConsumeAndGenerate(p: PendingAiPurchase, token: String) {
         billing.consume(
@@ -296,7 +301,7 @@ fun AiGenerateScreen(
         billing.findPendingPurchase(p.productId, p.payload) { purchase, error ->
             if (purchase == null) {
                 recoveryBusy = false
-                vm.purchaseFailed(error ?: "خرید نیمه‌تمام در حساب بازار پیدا نشد.")
+                vm.showError(error ?: "خرید نیمه‌تمام در حساب بازار پیدا نشد.")
             } else {
                 vm.verifyRecoveredPurchase(p, purchase) {
                     finishConsumeAndGenerate(p, purchase.purchaseToken)
@@ -306,19 +311,20 @@ fun AiGenerateScreen(
     }
 
     fun startNewPurchase() {
-        vm.preparePurchase(prompt.id) { prepared ->
+        vm.preparePurchase(prompt) { prepared ->
             billing.purchase(
                 prepared = prepared,
-                onStarted = vm::purchaseFlowStarted,
+                onStarted = { vm.purchaseFlowStarted(prepared.purchaseId) },
                 onSuccess = { purchase ->
                     vm.verifyPurchase(prepared, purchase) {
                         val p = vm.pendingPurchaseFor(prompt.id)
+                            ?.takeIf { it.purchaseId == prepared.purchaseId }
                         if (p != null) finishConsumeAndGenerate(p, purchase.purchaseToken)
-                        else vm.purchaseFailed("اطلاعات خرید روی دستگاه پیدا نشد؛ پرداخت شما روی سرور قابل پیگیری است.")
+                        else vm.showError("اطلاعات خرید روی دستگاه پیدا نشد؛ پرداخت شما روی سرور قابل پیگیری است.")
                     }
                 },
-                onCanceled = vm::purchaseCancelled,
-                onFailure = vm::purchaseFailed,
+                onCanceled = { vm.purchaseCancelled(prepared.purchaseId) },
+                onFailure = { message -> vm.purchaseFailed(prepared.purchaseId, message) },
             )
         }
     }
@@ -408,22 +414,36 @@ fun AiGenerateScreen(
                                 }
                             }
                         }
-                    } else if (state.generating) {
-                        item { GenerationProgressCard() }
+                    } else if (state.generating || state.reconciling) {
+                        item {
+                            GenerationProgressCard(
+                                message = if (state.reconciling) {
+                                    state.checkoutStage ?: "در حال بررسی نتیجه ساخت روی سرور…"
+                                } else {
+                                    "در حال ساخت تصویر شما…"
+                                }
+                            )
+                        }
                     } else {
                         when {
                             pending != null -> {
                                 item {
                                     RecoveryCard(
-                                        busy = recoveryBusy || state.checkoutStage != null,
+                                        busy = recoveryBusy || state.checkoutStage != null || state.reconciling,
                                         receiptSaved = !pending.purchaseToken.isNullOrBlank(),
                                         onContinue = { recoverPurchase(pending) },
+                                        onCheckResult = { vm.checkPurchaseResult(pending) },
+                                        onPayAgain = ::startNewPurchase,
                                     )
                                 }
                             }
                             otherPending != null -> {
                                 item {
-                                    OtherPendingPurchaseCard(otherPending.postId)
+                                    OtherPendingPurchaseCard(
+                                        pending = otherPending,
+                                        onOpenPrevious = { onOpenPrompt(otherPending.toPromptDto()) },
+                                        onStartFresh = ::startNewPurchase,
+                                    )
                                 }
                             }
                             else -> {
@@ -868,6 +888,8 @@ private fun RecoveryCard(
     busy: Boolean,
     receiptSaved: Boolean,
     onContinue: () -> Unit,
+    onCheckResult: () -> Unit,
+    onPayAgain: () -> Unit,
 ) {
     Surface(
         Modifier.fillMaxWidth(),
@@ -887,25 +909,34 @@ private fun RecoveryCard(
                         fontSize = 16.sp,
                     )
                     Text(
-                        if (receiptSaved) "بدون پرداخت دوباره، ساخت همین پرامپت را ادامه بده."
+                        if (receiptSaved) "اول نتیجه را بررسی کن؛ اگر ساخته نشده باشد بدون پرداخت دوباره ادامه می‌دهیم."
                         else "ابتدا وضعیت خرید قبلی از کافه‌بازار بررسی می‌شود.",
                         color = AiMuted,
                         fontSize = 9.5.sp,
+                        textAlign = TextAlign.Right,
                     )
                 }
             }
             Spacer(Modifier.height(13.dp))
             if (busy) {
-                BusyButton("در حال بررسی خرید و ادامه ساخت…")
+                BusyButton("در حال بررسی خرید و نتیجه ساخت…")
             } else {
-                PrimaryActionButton(
-                    if (receiptSaved) "تلاش دوباره؛ بدون پرداخت مجدد" else "بررسی خرید قبلی و ادامه",
-                    Icons.Default.Restore,
-                    onContinue,
-                )
+                PrimaryActionButton("بررسی نتیجه ساخت", Icons.Default.CloudDone, onCheckResult)
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = onContinue, modifier = Modifier.fillMaxWidth().height(50.dp)) {
+                    Icon(Icons.Default.Restore, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(7.dp))
+                    Text(if (receiptSaved) "ادامه بدون پرداخت مجدد" else "بازیابی خرید قبلی", fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = onPayAgain, modifier = Modifier.fillMaxWidth().height(48.dp)) {
+                    Icon(Icons.Default.ShoppingBag, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(7.dp))
+                    Text("ساخت مجدد با پرداخت جدید", fontWeight = FontWeight.Bold)
+                }
                 Spacer(Modifier.height(7.dp))
                 Text(
-                    "این خرید فقط برای همین پرامپت معتبر است و روی پرامپت دیگری استفاده نمی‌شود.",
+                    "پرداخت قبلی حذف نمی‌شود؛ می‌توانید آن را جداگانه پیگیری کنید.",
                     color = AiMuted,
                     fontSize = 8.5.sp,
                     textAlign = TextAlign.Center,
@@ -917,33 +948,69 @@ private fun RecoveryCard(
 }
 
 @Composable
-private fun OtherPendingPurchaseCard(postId: Long) {
+private fun OtherPendingPurchaseCard(
+    pending: PendingAiPurchase,
+    onOpenPrevious: () -> Unit,
+    onStartFresh: () -> Unit,
+) {
     Surface(
         Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(25.dp),
         color = Color(0xFF1D1710),
         border = BorderStroke(1.dp, Color(0xFF6B5231)),
     ) {
-        Column(
-            Modifier.fillMaxWidth().padding(16.dp),
-            horizontalAlignment = Alignment.End,
-        ) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.End) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.WarningAmber, null, tint = AiOrange, modifier = Modifier.size(27.dp))
+                if (pending.promptImageUrl.isNotBlank()) {
+                    AsyncImage(
+                        model = pending.promptImageUrl,
+                        contentDescription = pending.promptTitle,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(58.dp).clip(RoundedCornerShape(15.dp)),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                } else {
+                    Icon(Icons.Default.WarningAmber, null, tint = AiOrange, modifier = Modifier.size(27.dp))
+                    Spacer(Modifier.width(10.dp))
+                }
                 Spacer(Modifier.weight(1f))
-                Column(horizontalAlignment = Alignment.End) {
-                    Text("یک خرید دیگر هنوز نیمه‌تمام است", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
-                    Text("خرید قبلی مربوط به پرامپت دیگری است و برای این تصویر استفاده نمی‌شود.", color = AiMuted, fontSize = 9.5.sp)
+                Column(horizontalAlignment = Alignment.End, modifier = Modifier.weight(2f)) {
+                    Text("یک ساخت قبلی هنوز باز است", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                    Text(
+                        pending.promptTitle.ifBlank { "پرامپت #${pending.postId}" },
+                        color = AiOrange,
+                        fontSize = 10.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Right,
+                    )
                 }
             }
             Spacer(Modifier.height(10.dp))
             Text(
-                "برای جلوگیری از دوباره‌پرداخت یا مصرف اشتباه، ابتدا همان پرامپت را تکمیل کنید. شناسه پرامپت: $postId",
-                color = AiOrange,
-                fontSize = 9.sp,
+                "خرید قبلی برای همان پرامپت محفوظ می‌ماند. می‌توانید برگردید و ادامه‌اش دهید یا برای این پرامپت یک خرید تازه شروع کنید.",
+                color = AiMuted,
+                fontSize = 9.5.sp,
                 textAlign = TextAlign.Right,
                 modifier = Modifier.fillMaxWidth(),
             )
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onOpenPrevious, modifier = Modifier.weight(1f).height(50.dp)) {
+                    Icon(Icons.Default.Restore, null, modifier = Modifier.size(17.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text("پرامپت قبلی", fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                }
+                Button(
+                    onClick = onStartFresh,
+                    modifier = Modifier.weight(1f).height(50.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = AiPurpleStrong),
+                ) {
+                    Icon(Icons.Default.ShoppingBag, null, modifier = Modifier.size(17.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text("خرید برای این تصویر", fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                }
+            }
         }
     }
 }
@@ -989,7 +1056,7 @@ private fun BusyButton(text: String) {
 }
 
 @Composable
-private fun GenerationProgressCard() {
+private fun GenerationProgressCard(message: String = "در حال ساخت تصویر شما…") {
     Surface(
         Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(26.dp),
@@ -1004,7 +1071,7 @@ private fun GenerationProgressCard() {
                 }
             }
             Spacer(Modifier.height(15.dp))
-            Text("در حال ساخت تصویر شما…", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
+            Text(message, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.Center)
             Text(
                 "چهره مرجع و تمام جزئیات پرامپت در حال پردازش است. معمولاً کمی زمان می‌برد.",
                 color = AiMuted,

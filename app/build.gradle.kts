@@ -13,8 +13,8 @@ android {
         applicationId = "ir.promptall.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 31003
-        versionName = "3.10.3"
+        versionCode = 31004
+        versionName = "3.10.4"
         vectorDrawables.useSupportLibrary = true
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a")
