@@ -13,12 +13,9 @@ android {
         applicationId = "ir.promptall.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 30901
-        versionName = "3.9.1"
+        versionCode = 31001
+        versionName = "3.10.1"
         vectorDrawables.useSupportLibrary = true
-
-        // PromptAll is distributed to real Android phones. Keep the release focused
-        // on ARM devices used by the store audience and avoid unnecessary native ABIs.
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a")
         }
@@ -93,6 +90,9 @@ dependencies {
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("io.coil-kt.coil3:coil-compose:3.2.0")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.2.0")
+
+    // Cafe Bazaar official In-App Billing client.
+    implementation("com.github.cafebazaar.Poolakey:poolakey:2.2.0")
 
     implementation("androidx.room:room-runtime:2.7.1")
     implementation("androidx.room:room-ktx:2.7.1")

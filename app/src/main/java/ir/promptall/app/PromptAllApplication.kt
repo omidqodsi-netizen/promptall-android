@@ -6,6 +6,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import ir.promptall.app.data.local.PromptAllDatabase
 import ir.promptall.app.data.remote.PromptApi
+import ir.promptall.app.data.remote.AiImageApi
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -18,7 +19,7 @@ class PromptAllApplication : Application() {
             .build()
     }
 
-    val api: PromptApi by lazy {
+    private val retrofit by lazy {
         val client = OkHttpClient.Builder()
             .addInterceptor(HttpLoggingInterceptor().apply {
                 level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BASIC
@@ -30,8 +31,10 @@ class PromptAllApplication : Application() {
             .client(client)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
-            .create(PromptApi::class.java)
     }
+
+    val api: PromptApi by lazy { retrofit.create(PromptApi::class.java) }
+    val aiImageApi: AiImageApi by lazy { retrofit.create(AiImageApi::class.java) }
 
     companion object {
         private val MIGRATION_1_2 = object : Migration(1, 2) {

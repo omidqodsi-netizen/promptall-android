@@ -290,4 +290,3 @@ object GeminiImageSearchClient {
         }.sortedByDescending { it.confidence }.take(3)
     }
 }
-

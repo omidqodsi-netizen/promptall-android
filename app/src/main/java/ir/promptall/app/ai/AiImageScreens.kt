@@ -359,12 +359,13 @@ fun AiGenerateScreen(
                             onCamera = {
                                 val dir = File(context.cacheDir, "camera").apply { mkdirs() }
                                 val file = File(dir, "face-${System.currentTimeMillis()}.jpg")
-                                cameraUri = FileProvider.getUriForFile(
+                                val captureUri = FileProvider.getUriForFile(
                                     context,
                                     "${context.packageName}.fileprovider",
                                     file,
                                 )
-                                cameraLauncher.launch(cameraUri)
+                                cameraUri = captureUri
+                                cameraLauncher.launch(captureUri)
                             },
                             onRemove = vm::removeReference,
                         )

@@ -81,6 +81,7 @@ import androidx.compose.material.icons.filled.ImageSearch
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
@@ -136,6 +137,9 @@ import ir.promptall.app.data.remote.PromptCategory
 import ir.promptall.app.data.remote.PromptDto
 import ir.promptall.app.data.remote.PromptImage
 import ir.promptall.app.data.remote.ImageSearchGeneratedPrompt
+import ir.promptall.app.ai.AiGenerateScreen
+import ir.promptall.app.ai.AiImageViewModel
+import ir.promptall.app.ai.AiProfileScreen
 import ir.promptall.app.ui.HomeFeedMode
 import ir.promptall.app.ui.ImageSearchUiState
 import ir.promptall.app.ui.PromptViewModel
@@ -214,10 +218,13 @@ private fun PromptAllApp(
     var homeContentTabIndex by rememberSaveable { mutableIntStateOf(0) }
     var searchImageFirst by rememberSaveable { mutableStateOf(false) }
     var showAbout by rememberSaveable { mutableStateOf(false) }
+    var showAiProfile by rememberSaveable { mutableStateOf(false) }
+    var aiGeneratePrompt by remember { mutableStateOf<PromptDto?>(null) }
     var detailPrompt by remember { mutableStateOf<PromptDto?>(null) }
     var detailSourceCategory by remember { mutableStateOf<String?>(null) }
     var detailHistory by remember { mutableStateOf<List<DetailEntry>>(emptyList()) }
     val context = LocalContext.current
+    val aiVm: AiImageViewModel = viewModel()
     val displayPreferences = remember {
         context.getSharedPreferences("promptall_display", Context.MODE_PRIVATE)
     }
@@ -279,6 +286,8 @@ private fun PromptAllApp(
     LaunchedEffect(sharedImageUri) {
         val uri = sharedImageUri ?: return@LaunchedEffect
         showAbout = false
+        showAiProfile = false
+        aiGeneratePrompt = null
         detailPrompt = null
         detailSourceCategory = null
         detailHistory = emptyList()
@@ -363,7 +372,19 @@ private fun PromptAllApp(
             )
         )
     ) {
-        if (showAbout) {
+        if (aiGeneratePrompt != null) {
+            val prompt = requireNotNull(aiGeneratePrompt)
+            BackHandler { aiGeneratePrompt = null }
+            AiGenerateScreen(
+                prompt = prompt,
+                vm = aiVm,
+                onBack = { aiGeneratePrompt = null },
+                onOpenProfile = { aiGeneratePrompt = null; showAiProfile = true },
+            )
+        } else if (showAiProfile) {
+            BackHandler { showAiProfile = false }
+            AiProfileScreen(vm = aiVm, onBack = { showAiProfile = false })
+        } else if (showAbout) {
             BackHandler { showAbout = false }
             AboutScreen(onBack = { showAbout = false })
         } else if (detailPrompt != null) {
@@ -411,6 +432,7 @@ private fun PromptAllApp(
                 },
                 onRetrySimilar = { vm.loadSimilarPrompts(activePrompt, detailSourceCategory) },
                 onSimilarClick = openSimilarDetail,
+                onGenerate = { aiGeneratePrompt = it },
             )
         } else {
             if (selected == 3 && state.categoryFeedSlug != null) {
@@ -483,6 +505,7 @@ private fun PromptAllApp(
                             .putBoolean("home_gallery_mode", galleryMode)
                             .apply()
                     },
+                    onProfileClick = { showAiProfile = true },
                 )
 
                 1 -> SearchScreen(
@@ -571,7 +594,7 @@ private fun PromptAllApp(
             }
         }
 
-        if (!showAbout && detailPrompt == null) {
+        if (!showAbout && !showAiProfile && aiGeneratePrompt == null && detailPrompt == null) {
             FloatingBottomBar(
                 tabs = tabs,
                 selected = selected,
@@ -634,6 +657,7 @@ private fun FeedScreen(
     galleryState: LazyStaggeredGridState? = null,
     onGalleryModeToggle: (() -> Unit)? = null,
     onBackClick: (() -> Unit)? = null,
+    onProfileClick: (() -> Unit)? = null,
 ) {
     val content: @Composable () -> Unit = {
         FeedContent(
@@ -670,6 +694,7 @@ private fun FeedScreen(
             externalGalleryState = galleryState,
             onGalleryModeToggle = onGalleryModeToggle,
             onBackClick = onBackClick,
+            onProfileClick = onProfileClick,
         )
     }
     if (onRefresh != null) {
@@ -718,6 +743,7 @@ private fun FeedContent(
     externalGalleryState: LazyStaggeredGridState?,
     onGalleryModeToggle: (() -> Unit)?,
     onBackClick: (() -> Unit)?,
+    onProfileClick: (() -> Unit)?,
 ) {
     val rememberedGalleryState = rememberLazyStaggeredGridState()
     val galleryState = externalGalleryState ?: rememberedGalleryState
@@ -739,6 +765,7 @@ private fun FeedContent(
             galleryMode = galleryMode,
             onGalleryModeToggle = onGalleryModeToggle,
             onBackClick = onBackClick,
+            onProfileClick = onProfileClick,
         )
         if (onSearchClick != null) {
             if (homeContentTab != null && onHomeContentTabSelected != null) {
@@ -1534,6 +1561,7 @@ private fun AppHeader(
     onGalleryModeToggle: (() -> Unit)? = null,
     onBackClick: (() -> Unit)? = null,
     onInfoClick: (() -> Unit)? = null,
+    onProfileClick: (() -> Unit)? = null,
 ) {
     Row(
         Modifier.fillMaxWidth().padding(start = 15.dp, end = 15.dp, top = 11.dp, bottom = 10.dp),
@@ -1554,6 +1582,16 @@ private fun AppHeader(
                 contentDescription = "اطلاعات برنامه",
             ) {
                 Icon(Icons.Default.Info, null, Modifier.size(22.dp), tint = Color.White)
+            }
+            Spacer(Modifier.width(9.dp))
+        }
+        if (onProfileClick != null) {
+            HeaderCircleButton(
+                onClick = onProfileClick,
+                contentDescription = "پروفایل و تصاویر ساخته‌شده",
+                accent = true,
+            ) {
+                Icon(Icons.Default.Person, null, Modifier.size(22.dp), tint = PurpleSoft)
             }
             Spacer(Modifier.width(9.dp))
         }
@@ -2736,6 +2774,7 @@ private fun PromptDetailScreen(
     onCategoryClick: (String) -> Unit,
     onRetrySimilar: () -> Unit,
     onSimilarClick: (PromptDto) -> Unit,
+    onGenerate: (PromptDto) -> Unit,
 ) {
     val context = LocalContext.current
     var copied by remember(item.id) { mutableStateOf(false) }
@@ -2855,6 +2894,45 @@ private fun PromptDetailScreen(
                         maxLines = 3,
                         overflow = TextOverflow.Ellipsis,
                     )
+                }
+            }
+        }
+
+        if (!isVideoPrompt) {
+            item(key = "generate-${item.id}") {
+                Surface(
+                    onClick = { onGenerate(item) },
+                    modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 5.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    color = Color(0xFF21152F),
+                    contentColor = Color.White,
+                    border = BorderStroke(1.dp, Color(0xFF70479A)),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Surface(shape = RoundedCornerShape(50), color = Color(0xFF14251A)) {
+                            Text(
+                                "پرداخت امن بازار",
+                                color = Color(0xFF87D99E),
+                                fontSize = 8.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                            )
+                        }
+                        Spacer(Modifier.weight(1f))
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text("با چهره خودت بساز", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                            Text("عکس خودت را انتخاب کن؛ همین پرامپت خودکار اجرا می‌شود", color = MutedText, fontSize = 9.sp, textAlign = TextAlign.Right)
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Surface(modifier = Modifier.size(44.dp), shape = CircleShape, color = Color(0xFF7C3AED)) {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.AutoAwesome, null, tint = Color.White, modifier = Modifier.size(21.dp))
+                            }
+                        }
+                    }
                 }
             }
         }
