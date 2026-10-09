@@ -1,0 +1,59 @@
+PromptAll Android v3.10.2 FULL CHECKPOINT
+
+Base source: promptall-android-v3.9.1-ui-ux-full-source
+Base file count: 40
+Current file count before this manifest: 49
+Missing base files: 0
+
+All base files preserved: True
+
+FILES:
+.github/workflows/build-apk.yml
+CAFE_BAZAAR_SETUP_FA.md
+IMAGE_SEARCH_ARCHITECTURE.md
+MARKET_RELEASE.md
+README.md
+README_FULL_CHECKPOINT_FA.md
+RELEASE_V3.10.1_FA.md
+RELEASE_V3.10.2_FA.md
+RELEASE_V3.5.0.md
+RELEASE_V3.6.0.md
+RELEASE_V3.6.1.md
+RELEASE_V3.7.0.md
+RELEASE_V3.8.0.md
+RELEASE_V3.8.1.md
+RELEASE_V3.8.2.md
+RELEASE_V3.8.3.md
+RELEASE_V3.9.0.md
+RELEASE_V3.9.1.md
+SIZE_REPORT_V3.8.3.md
+SMOKE_TEST_V3.6.0.md
+SMOKE_TEST_V3.6.1.md
+SMOKE_TEST_V3.7.0.md
+SMOKE_TEST_V3.8.0.md
+SMOKE_TEST_V3.9.0.md
+SMOKE_TEST_V3.9.1.md
+TEST_CHECKLIST_FA.md
+UPLOAD_TO_GITHUB.md
+app/build.gradle.kts
+app/proguard-rules.pro
+app/src/main/AndroidManifest.xml
+app/src/main/java/ir/promptall/app/MainActivity.kt
+app/src/main/java/ir/promptall/app/PromptAllApplication.kt
+app/src/main/java/ir/promptall/app/ai/AiImageScreens.kt
+app/src/main/java/ir/promptall/app/ai/AiImageViewModel.kt
+app/src/main/java/ir/promptall/app/data/GeminiImageSearchClient.kt
+app/src/main/java/ir/promptall/app/data/ImageFingerprint.kt
+app/src/main/java/ir/promptall/app/data/ImageLabelAnalyzer.kt
+app/src/main/java/ir/promptall/app/data/local/Favorite.kt
+app/src/main/java/ir/promptall/app/data/remote/AiImageApi.kt
+app/src/main/java/ir/promptall/app/data/remote/PromptApi.kt
+app/src/main/java/ir/promptall/app/ui/PromptViewModel.kt
+app/src/main/java/ir/promptall/app/ui/theme/Theme.kt
+app/src/main/res/drawable/ic_launcher_foreground.xml
+app/src/main/res/values/strings.xml
+app/src/main/res/values/themes.xml
+app/src/main/res/xml/file_paths.xml
+build.gradle.kts
+gradle.properties
+settings.gradle.kts
