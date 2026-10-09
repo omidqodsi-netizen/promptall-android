@@ -95,6 +95,10 @@ data class AiProfile(
     val id: Long = 0,
     val name: String = "کاربر PromptAll",
     val generatedCount: Int = 0,
+    val availableCredits: Int = 0,
+    val lockedCredits: Int = 0,
+    val purchasedCredits: Int = 0,
+    val retryableCredits: Int = 0,
 )
 
 data class PreparePurchaseRequest(

@@ -577,6 +577,8 @@ fun AiProfileScreen(vm: AiImageViewModel, onBack: () -> Unit) {
             ProfileSummary(
                 name = state.profile?.name ?: "کاربر PromptAll",
                 count = state.profile?.generatedCount ?: state.history.size,
+                availableCredits = state.profile?.availableCredits ?: 0,
+                lockedCredits = state.profile?.lockedCredits ?: 0,
                 loading = state.profileLoading,
                 onRefresh = vm::loadHistory,
             )
@@ -1296,6 +1298,8 @@ private fun LoadingCenter(message: String) {
 private fun ProfileSummary(
     name: String,
     count: Int,
+    availableCredits: Int,
+    lockedCredits: Int,
     loading: Boolean,
     onRefresh: () -> Unit,
 ) {
@@ -1310,13 +1314,25 @@ private fun ProfileSummary(
                 if (loading) CircularProgressIndicator(color = AiPurpleSoft, modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                 else Icon(Icons.Default.Refresh, "تازه‌سازی", tint = AiMuted)
             }
-            Surface(modifier = Modifier.padding(horizontal = 4.dp), shape = RoundedCornerShape(50), color = Color(0xFF21142D)) {
-                Text("$count خروجی", color = AiPurpleSoft, fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp))
+            Column(horizontalAlignment = Alignment.Start) {
+                Surface(modifier = Modifier.padding(horizontal = 4.dp), shape = RoundedCornerShape(50), color = Color(0xFF21142D)) {
+                    Text("$count خروجی", color = AiPurpleSoft, fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp))
+                }
+                Spacer(Modifier.height(6.dp))
+                Surface(shape = RoundedCornerShape(50), color = Color(0xFF122017)) {
+                    Text("اعتبار آماده: $availableCredits", color = AiGreen, fontSize = 8.5.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp))
+                }
+                if (lockedCredits > 0) {
+                    Spacer(Modifier.height(5.dp))
+                    Surface(shape = RoundedCornerShape(50), color = Color(0xFF251B12)) {
+                        Text("در حال پردازش: $lockedCredits", color = AiOrange, fontSize = 8.3.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp))
+                    }
+                }
             }
             Spacer(Modifier.weight(1f))
             Column(horizontalAlignment = Alignment.End) {
                 Text(name, color = Color.White, fontWeight = FontWeight.ExtraBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("گالری خصوصی تصاویر ساخته‌شده", color = AiMuted, fontSize = 9.5.sp)
+                Text("گالری خصوصی تصاویر و اعتبار شما", color = AiMuted, fontSize = 9.5.sp)
             }
             Spacer(Modifier.width(10.dp))
             Surface(modifier = Modifier.size(54.dp), shape = CircleShape, color = Color(0xFF28183A)) {

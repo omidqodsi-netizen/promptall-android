@@ -866,7 +866,9 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
             val body = http?.response()?.errorBody()?.string().orEmpty()
             if (body.isBlank()) null else JSONObject(body).optString("message").takeIf { it.isNotBlank() }
         }.getOrNull()
+        val combined = ((serverMessage ?: "") + " " + raw).lowercase()
         return when {
+            combined.contains("pre-consume quota") || combined.contains("remaining user quota") || combined.contains("required pre-consume quota") || combined.contains("insufficient balance") || combined.contains("هیچ مسیر سازگار") || combined.contains("chat multimodal") || combined.contains("images/edits") -> "سیستم ساخت تصویر موقتاً با مشکل روبه‌رو شده است. اعتبار شما محفوظ است و از بخش پروفایل می‌توانید اعتبار باقی‌مانده را ببینید و بعداً دوباره تلاش کنید."
             code == 401 || raw.contains("401") -> "نشست برنامه منقضی شده است. برنامه را دوباره باز کنید."
             code == 402 || raw.contains("402") -> serverMessage ?: "پرداخت این درخواست کامل یا معتبر نشده است."
             code == 403 -> serverMessage ?: "اجازه انجام این درخواست تأیید نشد. تنظیمات حساب یا خرید را بررسی کنید."
