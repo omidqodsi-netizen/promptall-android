@@ -1,4 +1,4 @@
-# PromptAll Android v3.10.2 — FULL CHECKPOINT
+# PromptAll Android v3.10.3 — FULL CHECKPOINT
 
 این بسته یک Patch نیست و کل سورس لازم برای Build اپلیکیشن را در خود دارد.
 
@@ -7,8 +7,8 @@
 پوشه‌های اصلی `.github` و `app` و فایل‌های Gradle باید مستقیماً در ریشه ریپو قرار بگیرند؛ خود پوشه wrapper اضافی را آپلود نکنید.
 
 ## نسخه
-- versionName: 3.10.2
-- versionCode: 31002
+- versionName: 3.10.3
+- versionCode: 31003
 - Package: ir.promptall.app
 
 ## قابلیت جدید

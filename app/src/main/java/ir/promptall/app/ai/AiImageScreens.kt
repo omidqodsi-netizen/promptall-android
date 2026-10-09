@@ -177,7 +177,13 @@ class BazaarBillingManager(private val activity: ComponentActivity) {
             request = PurchaseRequest(productId = prepared.productId, payload = prepared.payload),
         ) {
             purchaseFlowBegan { onStarted() }
-            failedToBeginFlow { onFailure(it.message) }
+            failedToBeginFlow {
+                onFailure(
+                    it.message?.takeIf { message -> message.isNotBlank() }
+                        ?.let { message -> "صفحه پرداخت کافه‌بازار باز نشد: $message" }
+                        ?: "صفحه پرداخت کافه‌بازار باز نشد. اتصال بازار و وضعیت محصول را بررسی کنید."
+                )
+            }
             purchaseSucceed { onSuccess(it) }
             purchaseCanceled { onCanceled() }
             purchaseFailed { onFailure(it.message) }
@@ -257,6 +263,7 @@ fun AiGenerateScreen(
     DisposableEffect(billing) { onDispose { billing.disconnect() } }
 
     val pending = state.pendingPurchase?.takeIf { it.postId == prompt.id }
+    val otherPending = state.pendingPurchase?.takeIf { it.postId != prompt.id }
 
     fun finishConsumeAndGenerate(p: PendingAiPurchase, token: String) {
         billing.consume(
@@ -353,7 +360,7 @@ fun AiGenerateScreen(
                     item {
                         FaceUploadCard(
                             state = state,
-                            locked = state.generating || state.checkoutStage != null,
+                            locked = state.generating || state.checkoutStage != null || pending != null,
                             onGallery = { galleryPicker.launch("image/*") },
                             onCamera = {
                                 val dir = File(context.cacheDir, "camera").apply { mkdirs() }
@@ -404,29 +411,34 @@ fun AiGenerateScreen(
                     } else if (state.generating) {
                         item { GenerationProgressCard() }
                     } else {
-                        if (pending != null) {
-                            item {
-                                RecoveryCard(
-                                    busy = recoveryBusy || state.checkoutStage != null,
-                                    onContinue = { recoverPurchase(pending) },
-                                    onStartFresh = {
-                                        vm.abandonPendingPurchase()
-                                        startNewPurchase()
-                                    },
-                                )
+                        when {
+                            pending != null -> {
+                                item {
+                                    RecoveryCard(
+                                        busy = recoveryBusy || state.checkoutStage != null,
+                                        receiptSaved = !pending.purchaseToken.isNullOrBlank(),
+                                        onContinue = { recoverPurchase(pending) },
+                                    )
+                                }
                             }
-                        } else {
-                            item {
-                                PaymentCard(
-                                    price = price,
-                                    connected = bazaarConnected,
-                                    message = bazaarMessage,
-                                    paymentNotice = config.paymentNotice,
-                                    enabled = !state.referencePath.isNullOrBlank() && state.checkoutStage == null,
-                                    busyText = state.checkoutStage,
-                                    onPay = ::startNewPurchase,
-                                    onRetryGeneration = state.activePurchaseId?.let { { vm.retryGeneration(prompt.id) } },
-                                )
+                            otherPending != null -> {
+                                item {
+                                    OtherPendingPurchaseCard(otherPending.postId)
+                                }
+                            }
+                            else -> {
+                                item {
+                                    PaymentCard(
+                                        price = price,
+                                        connected = bazaarConnected,
+                                        message = bazaarMessage,
+                                        paymentNotice = config.paymentNotice,
+                                        enabled = !state.referencePath.isNullOrBlank() && state.checkoutStage == null,
+                                        busyText = state.checkoutStage,
+                                        onPay = ::startNewPurchase,
+                                        onRetryGeneration = null,
+                                    )
+                                }
                             }
                         }
                     }
@@ -854,8 +866,8 @@ private fun PaymentCard(
 @Composable
 private fun RecoveryCard(
     busy: Boolean,
+    receiptSaved: Boolean,
     onContinue: () -> Unit,
-    onStartFresh: () -> Unit,
 ) {
     Surface(
         Modifier.fillMaxWidth(),
@@ -868,20 +880,70 @@ private fun RecoveryCard(
                 Icon(Icons.Default.Restore, null, tint = AiGreen, modifier = Modifier.size(28.dp))
                 Spacer(Modifier.weight(1f))
                 Column(horizontalAlignment = Alignment.End) {
-                    Text("یک ساخت نیمه‌تمام پیدا شد", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
-                    Text("اگر قبلاً پرداخت کرده‌ای، لازم نیست دوباره پول بدهی.", color = AiMuted, fontSize = 9.5.sp)
+                    Text(
+                        if (receiptSaved) "پرداخت این پرامپت ثبت شده" else "یک پرداخت نیمه‌تمام پیدا شد",
+                        color = Color.White,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 16.sp,
+                    )
+                    Text(
+                        if (receiptSaved) "بدون پرداخت دوباره، ساخت همین پرامپت را ادامه بده."
+                        else "ابتدا وضعیت خرید قبلی از کافه‌بازار بررسی می‌شود.",
+                        color = AiMuted,
+                        fontSize = 9.5.sp,
+                    )
                 }
             }
             Spacer(Modifier.height(13.dp))
             if (busy) {
-                BusyButton("در حال بازیابی خرید و ادامه ساخت…")
+                BusyButton("در حال بررسی خرید و ادامه ساخت…")
             } else {
-                PrimaryActionButton("ادامه ساخت با خرید قبلی", Icons.Default.Restore, onContinue)
+                PrimaryActionButton(
+                    if (receiptSaved) "تلاش دوباره؛ بدون پرداخت مجدد" else "بررسی خرید قبلی و ادامه",
+                    Icons.Default.Restore,
+                    onContinue,
+                )
                 Spacer(Modifier.height(7.dp))
-                OutlinedButton(onClick = onStartFresh, modifier = Modifier.fillMaxWidth()) {
-                    Text("مطمئنم پرداختی نکرده‌ام؛ شروع درخواست جدید")
+                Text(
+                    "این خرید فقط برای همین پرامپت معتبر است و روی پرامپت دیگری استفاده نمی‌شود.",
+                    color = AiMuted,
+                    fontSize = 8.5.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun OtherPendingPurchaseCard(postId: Long) {
+    Surface(
+        Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(25.dp),
+        color = Color(0xFF1D1710),
+        border = BorderStroke(1.dp, Color(0xFF6B5231)),
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(16.dp),
+            horizontalAlignment = Alignment.End,
+        ) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.WarningAmber, null, tint = AiOrange, modifier = Modifier.size(27.dp))
+                Spacer(Modifier.weight(1f))
+                Column(horizontalAlignment = Alignment.End) {
+                    Text("یک خرید دیگر هنوز نیمه‌تمام است", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                    Text("خرید قبلی مربوط به پرامپت دیگری است و برای این تصویر استفاده نمی‌شود.", color = AiMuted, fontSize = 9.5.sp)
                 }
             }
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "برای جلوگیری از دوباره‌پرداخت یا مصرف اشتباه، ابتدا همان پرامپت را تکمیل کنید. شناسه پرامپت: $postId",
+                color = AiOrange,
+                fontSize = 9.sp,
+                textAlign = TextAlign.Right,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }

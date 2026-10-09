@@ -1,4 +1,4 @@
-PromptAll Android v3.10.2 FULL CHECKPOINT
+PromptAll Android v3.10.3 FULL CHECKPOINT
 
 Base source: promptall-android-v3.9.1-ui-ux-full-source
 Base file count: 40
@@ -57,3 +57,5 @@ app/src/main/res/xml/file_paths.xml
 build.gradle.kts
 gradle.properties
 settings.gradle.kts
+
+RELEASE_V3.10.3_FA.md

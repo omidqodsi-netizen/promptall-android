@@ -38,6 +38,10 @@ data class PendingAiPurchase(
     val payload: String,
     val purchaseToken: String?,
     val orderId: String?,
+    val flowStarted: Boolean = false,
+    val createdAt: Long = 0L,
+    val referencePath: String? = null,
+    val referenceMime: String = "image/jpeg",
 )
 
 data class AiImageUiState(
@@ -66,8 +70,10 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
         AiImageUiState(
             referencePath = identity.pendingReferencePath()?.takeIf { File(it).exists() },
             referenceMime = identity.pendingReferenceMime(),
-            pendingPurchase = identity.pendingPurchase(),
-            activePurchaseId = identity.pendingPurchase()?.purchaseId,
+            pendingPurchase = identity.recoverablePendingPurchase(),
+            activePurchaseId = identity.recoverablePendingPurchase()
+                ?.takeIf { !it.purchaseToken.isNullOrBlank() }
+                ?.purchaseId,
         )
     )
     val state: StateFlow<AiImageUiState> = _state.asStateFlow()
@@ -94,8 +100,10 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
                     loading = false,
                     config = cfg,
                     profile = profile,
-                    pendingPurchase = identity.pendingPurchase(),
-                    activePurchaseId = identity.pendingPurchase()?.purchaseId,
+                    pendingPurchase = identity.recoverablePendingPurchase(),
+                    activePurchaseId = identity.recoverablePendingPurchase()
+                        ?.takeIf { !it.purchaseToken.isNullOrBlank() }
+                        ?.purchaseId,
                     error = null,
                 )
                 loadHistory()
@@ -155,8 +163,11 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
                         }
                     } ?: error("فایل تصویر قابل خواندن نیست.")
 
+                    val protectedPendingPath = identity.pendingPurchase()?.referencePath
                     identity.pendingReferencePath()?.let { old ->
-                        if (old != dest.absolutePath) runCatching { File(old).delete() }
+                        if (old != dest.absolutePath && old != protectedPendingPath) {
+                            runCatching { File(old).delete() }
+                        }
                     }
                     identity.savePendingReference(dest.absolutePath, mime)
                     dest.absolutePath to mime
@@ -178,7 +189,10 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun removeReference() {
-        identity.pendingReferencePath()?.let { runCatching { File(it).delete() } }
+        val protectedPendingPath = identity.pendingPurchase()?.referencePath
+        identity.pendingReferencePath()?.let {
+            if (it != protectedPendingPath) runCatching { File(it).delete() }
+        }
         identity.clearPendingReference()
         _state.value = _state.value.copy(
             referencePath = null,
@@ -193,8 +207,13 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun pendingPurchaseFor(postId: Long): PendingAiPurchase? {
-        val pending = identity.pendingPurchase() ?: return null
+        val pending = identity.recoverablePendingPurchase() ?: return null
         return pending.takeIf { it.postId == postId }
+    }
+
+    fun hasPendingPurchaseForAnotherPrompt(postId: Long): Boolean {
+        val pending = identity.recoverablePendingPurchase() ?: return false
+        return pending.postId != postId
     }
 
     fun abandonPendingPurchase() {
@@ -218,6 +237,15 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
             _state.value = _state.value.copy(error = "اول یک عکس واضح از چهره خودتان انتخاب کنید.")
             return
         }
+
+        val existing = identity.recoverablePendingPurchase()
+        if (existing != null && existing.postId != postId) {
+            _state.value = _state.value.copy(
+                error = "یک خرید نیمه‌تمام برای پرامپت دیگری دارید. ابتدا همان خرید را تکمیل کنید؛ این خرید برای پرامپت جدید استفاده نمی‌شود."
+            )
+            return
+        }
+
         viewModelScope.launch {
             _state.value = _state.value.copy(checkoutStage = "در حال آماده‌سازی خرید…", error = null)
             runCatching { api.preparePurchase(token, PreparePurchaseRequest(postId)) }
@@ -227,11 +255,13 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
                         postId = postId,
                         productId = prepared.productId,
                         payload = prepared.payload,
+                        referencePath = _state.value.referencePath ?: identity.pendingReferencePath(),
+                        referenceMime = _state.value.referenceMime.ifBlank { identity.pendingReferenceMime() },
                     )
                     val pending = identity.pendingPurchase()
                     _state.value = _state.value.copy(
                         checkoutStage = "در انتظار پرداخت امن کافه‌بازار…",
-                        activePurchaseId = prepared.purchaseId,
+                        activePurchaseId = null,
                         pendingPurchase = pending,
                     )
                     onReady(prepared)
@@ -246,19 +276,32 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun purchaseFlowStarted() {
-        _state.value = _state.value.copy(checkoutStage = "صفحه پرداخت کافه‌بازار باز شد…", error = null)
+        identity.markPendingPurchaseFlowStarted()
+        _state.value = _state.value.copy(
+            checkoutStage = "صفحه پرداخت کافه‌بازار باز شد…",
+            pendingPurchase = identity.pendingPurchase(),
+            error = null,
+        )
     }
 
     fun purchaseCancelled() {
+        val pending = identity.pendingPurchase()
+        if (pending?.purchaseToken.isNullOrBlank()) identity.clearPendingPurchase()
         _state.value = _state.value.copy(
             checkoutStage = null,
+            activePurchaseId = null,
+            pendingPurchase = identity.recoverablePendingPurchase(),
             error = "پرداخت لغو شد؛ مبلغی از شما کسر نشده است.",
         )
     }
 
     fun purchaseFailed(message: String?) {
+        val pending = identity.pendingPurchase()
+        if (pending?.purchaseToken.isNullOrBlank()) identity.clearPendingPurchase()
         _state.value = _state.value.copy(
             checkoutStage = null,
+            activePurchaseId = null,
+            pendingPurchase = identity.recoverablePendingPurchase(),
             error = message?.takeIf { it.isNotBlank() } ?: "پرداخت بازار انجام نشد.",
         )
     }
@@ -277,7 +320,10 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
             purchaseToken = purchase.purchaseToken,
             orderId = purchase.orderId,
         )
-        _state.value = _state.value.copy(pendingPurchase = identity.pendingPurchase())
+        _state.value = _state.value.copy(
+            pendingPurchase = identity.pendingPurchase(),
+            activePurchaseId = prepared.purchaseId,
+        )
 
         viewModelScope.launch {
             _state.value = _state.value.copy(
@@ -393,9 +439,19 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun generate(postId: Long, purchaseId: Long) {
-        val path = _state.value.referencePath ?: identity.pendingReferencePath()
+        val pending = identity.pendingPurchase()
+        if (pending == null || pending.postId != postId || pending.purchaseId != purchaseId) {
+            _state.value = _state.value.copy(
+                error = "این خرید برای پرامپت دیگری ثبت شده است و برای تصویر فعلی قابل استفاده نیست."
+            )
+            return
+        }
+
+        val path = pending.referencePath
+            ?: _state.value.referencePath
+            ?: identity.pendingReferencePath()
         if (path.isNullOrBlank() || !File(path).exists()) {
-            _state.value = _state.value.copy(error = "عکس مرجع پیدا نشد؛ دوباره عکس را انتخاب کنید.")
+            _state.value = _state.value.copy(error = "عکس مرجع مربوط به این خرید پیدا نشد؛ پرداخت شما محفوظ است.")
             return
         }
         viewModelScope.launch {
@@ -408,7 +464,9 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
             runCatching {
                 withContext(Dispatchers.IO) {
                     val file = File(path)
-                    val mime = _state.value.referenceMime.ifBlank { identity.pendingReferenceMime() }
+                    val mime = pending.referenceMime.ifBlank {
+                        _state.value.referenceMime.ifBlank { identity.pendingReferenceMime() }
+                    }
                     val part = MultipartBody.Part.createFormData(
                         "reference_image",
                         file.name,
@@ -448,12 +506,17 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
 
     fun retryGeneration(postId: Long) {
         val pending = pendingPurchaseFor(postId)
-        val purchaseId = _state.value.activePurchaseId ?: pending?.purchaseId
-        if (purchaseId != null && purchaseId > 0) {
-            generate(postId, purchaseId)
-        } else {
-            _state.value = _state.value.copy(error = "خرید آماده‌ای برای تلاش دوباره پیدا نشد.")
+        if (pending == null) {
+            _state.value = _state.value.copy(error = "خرید آماده‌ای برای این پرامپت پیدا نشد.")
+            return
         }
+        if (pending.purchaseToken.isNullOrBlank()) {
+            _state.value = _state.value.copy(
+                error = "رسید پرداخت این پرامپت هنوز تأیید نشده است؛ ابتدا خرید قبلی را بازیابی کنید."
+            )
+            return
+        }
+        generate(postId, pending.purchaseId)
     }
 
     fun loadHistory() {
@@ -533,15 +596,30 @@ private class AiAppIdentity(context: Context) {
     fun pendingReferenceMime(): String = prefs.getString("ai_reference_mime", "image/jpeg").orEmpty().ifBlank { "image/jpeg" }
     fun clearPendingReference() = prefs.edit().remove("ai_reference_path").remove("ai_reference_mime").apply()
 
-    fun savePendingPurchase(id: Long, postId: Long, productId: String, payload: String) {
+    fun savePendingPurchase(
+        id: Long,
+        postId: Long,
+        productId: String,
+        payload: String,
+        referencePath: String?,
+        referenceMime: String,
+    ) {
         prefs.edit()
             .putLong("ai_purchase_id", id)
             .putLong("ai_purchase_post", postId)
             .putString("ai_purchase_product", productId)
             .putString("ai_purchase_payload", payload)
+            .putBoolean("ai_purchase_flow_started", false)
+            .putLong("ai_purchase_created_at", System.currentTimeMillis())
+            .putString("ai_purchase_reference_path", referencePath)
+            .putString("ai_purchase_reference_mime", referenceMime)
             .remove("ai_purchase_token")
             .remove("ai_purchase_order")
             .apply()
+    }
+
+    fun markPendingPurchaseFlowStarted() {
+        prefs.edit().putBoolean("ai_purchase_flow_started", true).apply()
     }
 
     fun savePendingPurchaseReceipt(purchaseToken: String, orderId: String) {
@@ -564,7 +642,20 @@ private class AiAppIdentity(context: Context) {
             payload = payload,
             purchaseToken = prefs.getString("ai_purchase_token", null)?.takeIf { it.isNotBlank() },
             orderId = prefs.getString("ai_purchase_order", null)?.takeIf { it.isNotBlank() },
+            flowStarted = prefs.getBoolean("ai_purchase_flow_started", false),
+            createdAt = prefs.getLong("ai_purchase_created_at", 0L),
+            referencePath = prefs.getString("ai_purchase_reference_path", null)?.takeIf { it.isNotBlank() },
+            referenceMime = prefs.getString("ai_purchase_reference_mime", "image/jpeg").orEmpty().ifBlank { "image/jpeg" },
         )
+    }
+
+    fun recoverablePendingPurchase(): PendingAiPurchase? {
+        val pending = pendingPurchase() ?: return null
+        if (pending.purchaseToken.isNullOrBlank() && !pending.flowStarted) {
+            clearPendingPurchase()
+            return null
+        }
+        return pending
     }
 
     fun clearPendingPurchase() {
@@ -575,6 +666,10 @@ private class AiAppIdentity(context: Context) {
             .remove("ai_purchase_payload")
             .remove("ai_purchase_token")
             .remove("ai_purchase_order")
+            .remove("ai_purchase_flow_started")
+            .remove("ai_purchase_created_at")
+            .remove("ai_purchase_reference_path")
+            .remove("ai_purchase_reference_mime")
             .apply()
     }
 }
