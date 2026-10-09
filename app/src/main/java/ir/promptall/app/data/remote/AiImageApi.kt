@@ -16,7 +16,7 @@ interface AiImageApi {
     suspend fun bootstrap(@Body request: AppBootstrapRequest): AppBootstrapResponse
 
     @GET("wp-json/promptall-ai/v1/app/config")
-    suspend fun config(): AiAppConfig
+    suspend fun config(@Query("_ts") cacheBust: Long): AiAppConfig
 
     @POST("wp-json/promptall-ai/v1/app/purchase/prepare")
     suspend fun preparePurchase(
@@ -88,6 +88,7 @@ data class AiAppConfig(
     val maxUploadMb: Int = 8,
     val profileTitle: String = "تصاویر ساخته‌شده",
     val paymentNotice: String = "پرداخت امن از طریق کافه‌بازار انجام می‌شود.",
+    val disabledMessage: String = "متأسفانه فعلاً این قابلیت در دسترس نیست.",
 )
 
 data class AiProfile(

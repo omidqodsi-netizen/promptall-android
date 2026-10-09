@@ -1,10 +1,15 @@
 package ir.promptall.app.ai
 
-import android.app.DownloadManager
+import android.Manifest
+import android.content.ContentValues
 import android.content.Context
-import android.content.Intent
+import android.content.pm.PackageManager
+import android.media.MediaScannerConnection
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
+import android.provider.MediaStore
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -49,7 +54,6 @@ import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.WarningAmber
@@ -83,6 +87,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
@@ -96,7 +101,16 @@ import ir.cafebazaar.poolakey.request.PurchaseRequest
 import ir.promptall.app.data.remote.AiHistoryItem
 import ir.promptall.app.data.remote.PreparePurchaseResponse
 import ir.promptall.app.data.remote.PromptDto
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
 
 private val AiPurple = Color(0xFFA85CFF)
 private val AiPurpleStrong = Color(0xFF7C3AED)
@@ -302,6 +316,14 @@ fun AiGenerateScreen(
     val otherPending = state.pendingPurchases
         .filter { it.postId != prompt.id }
         .maxByOrNull { it.createdAt }
+    val resultUrl = state.resultUrl?.takeIf { state.resultPostId == prompt.id }
+    val currentGenerating = state.generating && state.generationPostId == prompt.id
+    val currentReconciling = state.reconciling && state.generationPostId == prompt.id
+    val saveImage = rememberImageSaveAction()
+
+    LaunchedEffect(prompt.id) {
+        vm.enterPrompt(prompt.id)
+    }
 
     LaunchedEffect(pending?.purchaseId) {
         pending?.let { vm.refreshPendingPurchase(it, surfaceCompletedResult = true) }
@@ -400,7 +422,7 @@ fun AiGenerateScreen(
             when {
                 state.loading -> LoadingCenter("در حال آماده‌سازی استودیو…")
                 config == null || !config.enabled || !config.bazaarEnabled -> AiDisabledState(
-                    state.error ?: "ساخت تصویر داخل اپ هنوز فعال نشده است."
+                    state.error ?: config?.disabledMessage.orEmpty().ifBlank { "متأسفانه فعلاً این قابلیت در دسترس نیست." }
                 )
                 else -> LazyColumn(
                     modifier = Modifier.fillMaxSize(),
@@ -411,14 +433,14 @@ fun AiGenerateScreen(
                     item {
                         StepStrip(
                             hasPhoto = !state.referencePath.isNullOrBlank(),
-                            paid = pending?.purchaseToken != null || state.generating || state.resultUrl != null,
-                            done = state.resultUrl != null,
+                            paid = pending?.purchaseToken != null || currentGenerating || resultUrl != null,
+                            done = resultUrl != null,
                         )
                     }
                     item {
                         FaceUploadCard(
                             state = state,
-                            locked = state.generating || state.checkoutStage != null || pending != null,
+                            locked = currentGenerating || currentReconciling || state.checkoutStage != null || pending != null,
                             onGallery = { galleryPicker.launch("image/*") },
                             onCamera = {
                                 val dir = File(context.cacheDir, "camera").apply { mkdirs() }
@@ -439,13 +461,12 @@ fun AiGenerateScreen(
                         item { ErrorBanner(state.error.orEmpty(), onDismiss = vm::clearError) }
                     }
 
-                    if (state.resultUrl != null) {
+                    if (resultUrl != null) {
                         item {
                             ResultCard(
-                                url = state.resultUrl.orEmpty(),
+                                url = resultUrl.orEmpty(),
                                 title = prompt.title,
-                                onDownload = { downloadImage(context, state.resultUrl.orEmpty(), prompt.id) },
-                                onShare = { shareImageUrl(context, state.resultUrl.orEmpty(), prompt.title) },
+                                onSave = { saveImage(resultUrl.orEmpty(), prompt.id) },
                             )
                         }
                         item {
@@ -466,7 +487,7 @@ fun AiGenerateScreen(
                                 }
                             }
                         }
-                    } else if (state.generating || state.reconciling) {
+                    } else if (currentGenerating || currentReconciling) {
                         item {
                             GenerationProgressCard(
                                 message = if (state.reconciling) {
@@ -543,6 +564,7 @@ fun AiGenerateScreen(
 fun AiProfileScreen(vm: AiImageViewModel, onBack: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
     var preview by remember { mutableStateOf<AiHistoryItem?>(null) }
+    val saveImage = rememberImageSaveAction()
     LaunchedEffect(Unit) { vm.loadHistory() }
 
     Box(
@@ -581,7 +603,6 @@ fun AiProfileScreen(vm: AiImageViewModel, onBack: () -> Unit) {
                 containerColor = Color(0xFF101116),
             ) {
                 val item = preview ?: return@ModalBottomSheet
-                val context = LocalContext.current
                 Column(
                     Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -601,24 +622,14 @@ fun AiProfileScreen(vm: AiImageViewModel, onBack: () -> Unit) {
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Spacer(Modifier.height(12.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(
-                            onClick = { shareImageUrl(context, item.imageUrl, item.title) },
-                            modifier = Modifier.weight(1f),
-                        ) {
-                            Icon(Icons.Default.Share, null)
-                            Spacer(Modifier.width(6.dp))
-                            Text("اشتراک")
-                        }
-                        Button(
-                            onClick = { downloadImage(context, item.imageUrl, item.id) },
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(containerColor = AiPurpleStrong),
-                        ) {
-                            Icon(Icons.Default.Download, null)
-                            Spacer(Modifier.width(6.dp))
-                            Text("دانلود")
-                        }
+                    Button(
+                        onClick = { saveImage(item.imageUrl, item.id) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = AiPurpleStrong),
+                    ) {
+                        Icon(Icons.Default.Download, null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("ذخیره تصویر")
                     }
                 }
             }
@@ -1166,7 +1177,7 @@ private fun GenerationProgressCard(message: String = "در حال ساخت تص�
 }
 
 @Composable
-private fun ResultCard(url: String, title: String, onDownload: () -> Unit, onShare: () -> Unit) {
+private fun ResultCard(url: String, title: String, onSave: () -> Unit) {
     Surface(
         Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(26.dp),
@@ -1194,21 +1205,14 @@ private fun ResultCard(url: String, title: String, onDownload: () -> Unit, onSha
                     .clip(RoundedCornerShape(21.dp)).background(Color.Black),
             )
             Spacer(Modifier.height(10.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onShare, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Default.Share, null)
-                    Spacer(Modifier.width(5.dp))
-                    Text("اشتراک")
-                }
-                Button(
-                    onClick = onDownload,
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(containerColor = AiPurpleStrong),
-                ) {
-                    Icon(Icons.Default.Download, null)
-                    Spacer(Modifier.width(5.dp))
-                    Text("دانلود")
-                }
+            Button(
+                onClick = onSave,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = AiPurpleStrong),
+            ) {
+                Icon(Icons.Default.Download, null)
+                Spacer(Modifier.width(5.dp))
+                Text("ذخیره تصویر")
             }
         }
     }
@@ -1391,22 +1395,105 @@ private fun StatusPill(text: String, color: Color) {
     }
 }
 
-private fun shareImageUrl(context: Context, url: String, title: String) {
-    val intent = Intent(Intent.ACTION_SEND).apply {
-        type = "text/plain"
-        putExtra(Intent.EXTRA_SUBJECT, title)
-        putExtra(Intent.EXTRA_TEXT, "$title\n$url")
-    }
-    context.startActivity(Intent.createChooser(intent, "اشتراک‌گذاری تصویر"))
+private val imageSaveClient: OkHttpClient by lazy {
+    OkHttpClient.Builder()
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .build()
 }
 
-private fun downloadImage(context: Context, url: String, id: Long) {
-    runCatching {
-        val request = DownloadManager.Request(Uri.parse(url))
-            .setTitle("PromptAll AI")
-            .setDescription("در حال ذخیره تصویر")
-            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            .setDestinationInExternalPublicDir(Environment.DIRECTORY_PICTURES, "PromptAll/promptall-$id.jpg")
-        (context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
+@Composable
+private fun rememberImageSaveAction(): (String, Long) -> Unit {
+    val context = LocalContext.current
+    var pendingSave by remember { mutableStateOf<Pair<String, Long>?>(null) }
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val target = pendingSave
+        pendingSave = null
+        if (granted && target != null) {
+            saveImageToGallery(context, target.first, target.second)
+        } else if (!granted) {
+            Toast.makeText(context, "برای ذخیره تصویر، اجازه دسترسی به حافظه لازم است.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    return { url, id ->
+        if (
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingSave = url to id
+            permissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        } else {
+            saveImageToGallery(context, url, id)
+        }
+    }
+}
+
+private fun saveImageToGallery(context: Context, url: String, id: Long) {
+    if (url.isBlank()) {
+        Toast.makeText(context, "آدرس تصویر معتبر نیست.", Toast.LENGTH_SHORT).show()
+        return
+    }
+    Toast.makeText(context, "در حال ذخیره تصویر…", Toast.LENGTH_SHORT).show()
+    CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+        val result = runCatching {
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", "PromptAll-Android/3.10.7")
+                .build()
+            imageSaveClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+                val body = response.body ?: throw IOException("Empty image response")
+                val responseMime = body.contentType()?.toString()?.substringBefore(';')?.trim().orEmpty()
+                val mime = responseMime.takeIf { it.startsWith("image/", ignoreCase = true) } ?: when {
+                    url.contains(".webp", ignoreCase = true) -> "image/webp"
+                    url.contains(".png", ignoreCase = true) -> "image/png"
+                    else -> "image/jpeg"
+                }
+                val ext = when (mime.lowercase()) {
+                    "image/png" -> "png"
+                    "image/webp" -> "webp"
+                    else -> "jpg"
+                }
+                val fileName = "PromptAll-$id-${System.currentTimeMillis()}.$ext"
+                val input = body.byteStream()
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val values = ContentValues().apply {
+                        put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+                        put(MediaStore.Images.Media.MIME_TYPE, mime)
+                        put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/PromptAll")
+                        put(MediaStore.Images.Media.IS_PENDING, 1)
+                    }
+                    val resolver = context.contentResolver
+                    val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                        ?: throw IOException("MediaStore insert failed")
+                    try {
+                        resolver.openOutputStream(uri)?.use { output -> input.copyTo(output) }
+                            ?: throw IOException("MediaStore output failed")
+                        values.clear()
+                        values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                        resolver.update(uri, values, null, null)
+                    } catch (e: Throwable) {
+                        resolver.delete(uri, null, null)
+                        throw e
+                    }
+                } else {
+                    @Suppress("DEPRECATION")
+                    val pictures = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+                    val dir = File(pictures, "PromptAll").apply { mkdirs() }
+                    val file = File(dir, fileName)
+                    FileOutputStream(file).use { output -> input.copyTo(output) }
+                    MediaScannerConnection.scanFile(context, arrayOf(file.absolutePath), arrayOf(mime), null)
+                }
+            }
+        }
+        withContext(Dispatchers.Main) {
+            result.onSuccess {
+                Toast.makeText(context, "تصویر در گالری، پوشه PromptAll ذخیره شد.", Toast.LENGTH_LONG).show()
+            }.onFailure {
+                Toast.makeText(context, "ذخیره تصویر انجام نشد؛ اتصال اینترنت یا دسترسی حافظه را بررسی کنید.", Toast.LENGTH_LONG).show()
+            }
+        }
     }
 }

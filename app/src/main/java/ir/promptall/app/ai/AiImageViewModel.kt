@@ -84,6 +84,8 @@ data class AiImageUiState(
     val generating: Boolean = false,
     val reconciling: Boolean = false,
     val resultUrl: String? = null,
+    val resultPostId: Long? = null,
+    val generationPostId: Long? = null,
     val activePurchaseId: Long? = null,
     val pendingPurchases: List<PendingAiPurchase> = emptyList(),
     val error: String? = null,
@@ -111,7 +113,7 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             _state.value = _state.value.copy(loading = true, error = null)
             runCatching {
-                val cfg = api.config()
+                val cfg = api.config(System.currentTimeMillis())
                 val session = api.bootstrap(
                     AppBootstrapRequest(
                         installationId = identity.installationId(),
@@ -143,14 +145,48 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
         _state.value = _state.value.copy(error = null)
     }
 
+    /**
+     * Starts a fresh generator session for the selected prompt.
+     * Result state is intentionally prompt-scoped so a completed image from a
+     * previous prompt can never leak into the next generator screen.
+     */
+    fun enterPrompt(postId: Long) {
+        _state.value = _state.value.copy(
+            resultUrl = null,
+            resultPostId = null,
+            error = null,
+        )
+    }
+
+    /**
+     * Re-check the server switch on every Generate tap. This makes the admin
+     * kill-switch effective immediately without requiring an app restart.
+     */
+    fun checkGenerationAvailability(onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            runCatching { api.config(System.currentTimeMillis()) }
+                .onSuccess { cfg ->
+                    _state.value = _state.value.copy(config = cfg)
+                    val allowed = cfg.enabled && cfg.bazaarEnabled
+                    onResult(
+                        allowed,
+                        if (allowed) "" else cfg.disabledMessage.ifBlank { "متأسفانه فعلاً این قابلیت در دسترس نیست." },
+                    )
+                }
+                .onFailure {
+                    onResult(false, "وضعیت قابلیت ساخت تصویر قابل بررسی نیست؛ اتصال اینترنت را بررسی کنید.")
+                }
+        }
+    }
+
     fun clearResult(keepReference: Boolean = true) {
         if (!keepReference) removeReference()
-        _state.value = _state.value.copy(resultUrl = null, error = null)
+        _state.value = _state.value.copy(resultUrl = null, resultPostId = null, error = null)
     }
 
     fun stageReference(context: Context, uri: Uri) {
         viewModelScope.launch {
-            _state.value = _state.value.copy(referencePreparing = true, error = null, resultUrl = null)
+            _state.value = _state.value.copy(referencePreparing = true, error = null, resultUrl = null, resultPostId = null)
             runCatching {
                 withContext(Dispatchers.IO) {
                     val resolver = context.contentResolver
@@ -207,7 +243,7 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
         val protected = identity.recoverablePendingPurchases().mapNotNull { it.referencePath }.toSet()
         identity.pendingReferencePath()?.let { if (it !in protected) runCatching { File(it).delete() } }
         identity.clearPendingReference()
-        _state.value = _state.value.copy(referencePath = null, resultUrl = null, error = null)
+        _state.value = _state.value.copy(referencePath = null, resultUrl = null, resultPostId = null, error = null)
     }
 
     fun hasReference(): Boolean {
@@ -492,7 +528,7 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
     fun checkPurchaseResult(pending: PendingAiPurchase, silent: Boolean = false, onUnfinished: (() -> Unit)? = null) {
         viewModelScope.launch {
             if (!silent) {
-                _state.value = _state.value.copy(reconciling = true, checkoutStage = "در حال بررسی نتیجه روی سرور…", error = null)
+                _state.value = _state.value.copy(reconciling = true, generationPostId = pending.postId, checkoutStage = "در حال بررسی نتیجه روی سرور…", error = null)
             }
             val result = runCatching { api.purchaseStatus(identity.token(), pending.purchaseId) }
             result.onSuccess { status ->
@@ -501,6 +537,7 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
                     if (!silent) {
                         _state.value = _state.value.copy(
                             reconciling = false,
+                            generationPostId = null,
                             checkoutStage = null,
                             error = when (status.status) {
                                 "generating" -> "ساخت تصویر هنوز روی سرور در حال انجام است. چند لحظه دیگر «بررسی نتیجه» را بزنید."
@@ -515,6 +552,7 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
                 if (!silent) {
                     _state.value = _state.value.copy(
                         reconciling = false,
+                        generationPostId = null,
                         checkoutStage = null,
                         error = humanError(it, "بررسی وضعیت سفارش انجام نشد."),
                     )
@@ -550,6 +588,8 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
                 checkoutStage = null,
                 error = null,
                 resultUrl = null,
+                resultPostId = null,
+                generationPostId = postId,
                 activePurchaseId = purchaseId,
             )
             runCatching {
@@ -575,6 +615,8 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
                     generating = false,
                     reconciling = false,
                     resultUrl = response.imageUrl,
+                    resultPostId = postId,
+                    generationPostId = null,
                     profile = response.profile ?: _state.value.profile,
                     activePurchaseId = null,
                     pendingPurchases = identity.recoverablePendingPurchases(),
@@ -589,6 +631,7 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
                         generating = false,
                         reconciling = false,
                         activePurchaseId = purchaseId,
+                        generationPostId = null,
                         pendingPurchases = identity.recoverablePendingPurchases(),
                         error = humanError(
                             error,
@@ -638,6 +681,7 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
             reconciling = true,
             checkoutStage = "پاسخ ساخت دیر رسید؛ در حال بررسی نتیجه روی سرور…",
             error = null,
+            generationPostId = pending.postId,
             activePurchaseId = pending.purchaseId,
         )
         repeat(8) { attempt ->
@@ -648,6 +692,7 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
                     _state.value = _state.value.copy(
                         reconciling = false,
                         checkoutStage = null,
+                        generationPostId = null,
                         error = status.errorMessage.ifBlank { "ساخت قبلی ناموفق بود؛ بدون پرداخت مجدد دوباره تلاش کنید." },
                     )
                     return
@@ -658,6 +703,7 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
         _state.value = _state.value.copy(
             reconciling = false,
             checkoutStage = null,
+            generationPostId = null,
             error = "درخواست ساخت روی سرور ثبت شده اما نتیجه هنوز قطعی نیست. پرداخت شما محفوظ است؛ کمی بعد «بررسی نتیجه» را بزنید.",
         )
     }
@@ -684,6 +730,8 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
                     reconciling = false,
                     checkoutStage = null,
                     resultUrl = status.imageUrl,
+                    resultPostId = pending.postId,
+                    generationPostId = null,
                     profile = status.profile ?: _state.value.profile,
                     activePurchaseId = null,
                     pendingPurchases = identity.recoverablePendingPurchases(),
@@ -691,6 +739,7 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
                 )
             } else {
                 _state.value.copy(
+                    generationPostId = if (_state.value.generationPostId == pending.postId) null else _state.value.generationPostId,
                     activePurchaseId = null,
                     pendingPurchases = identity.recoverablePendingPurchases(),
                 )
@@ -705,6 +754,7 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
                 generating = false,
                 reconciling = false,
                 checkoutStage = null,
+                generationPostId = if (_state.value.generationPostId == pending.postId) null else _state.value.generationPostId,
                 activePurchaseId = null,
                 pendingPurchases = identity.recoverablePendingPurchases(),
             )
@@ -719,6 +769,7 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
                 generating = false,
                 reconciling = false,
                 checkoutStage = null,
+                generationPostId = if (_state.value.generationPostId == pending.postId) null else _state.value.generationPostId,
                 activePurchaseId = null,
                 pendingPurchases = identity.recoverablePendingPurchases(),
                 error = if (showMissingCompletedError && status.imageUrl.isBlank()) {

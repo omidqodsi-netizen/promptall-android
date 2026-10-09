@@ -1,60 +1,22 @@
-PromptAll Android v3.10.6 FULL SOURCE
-Files: 57
+PromptAll Android v3.10.7 FULL SOURCE
+versionCode=31007
+companion_plugin=PromptAll AI Image Generator v1.0.29
 
-.github/workflows/build-apk.yml
-CAFE_BAZAAR_SETUP_FA.md
-FULL_CHECKPOINT_MANIFEST.txt
-IMAGE_SEARCH_ARCHITECTURE.md
-MARKET_RELEASE.md
-README.md
-README_FULL_CHECKPOINT_FA.md
-RELEASE_V3.10.1_FA.md
-RELEASE_V3.10.2_FA.md
-RELEASE_V3.10.3_FA.md
-RELEASE_V3.10.4_FA.md
-RELEASE_V3.10.5_FA.md
-RELEASE_V3.10.6_FA.md
-RELEASE_V3.5.0.md
-RELEASE_V3.6.0.md
-RELEASE_V3.6.1.md
-RELEASE_V3.7.0.md
-RELEASE_V3.8.0.md
-RELEASE_V3.8.1.md
-RELEASE_V3.8.2.md
-RELEASE_V3.8.3.md
-RELEASE_V3.9.0.md
-RELEASE_V3.9.1.md
-SIZE_REPORT_V3.8.3.md
-SMOKE_TEST_V3.6.0.md
-SMOKE_TEST_V3.6.1.md
-SMOKE_TEST_V3.7.0.md
-SMOKE_TEST_V3.8.0.md
-SMOKE_TEST_V3.9.0.md
-SMOKE_TEST_V3.9.1.md
-TEST_CHECKLIST_FA.md
-TEST_CHECKLIST_V3.10.4_FA.md
-TEST_CHECKLIST_V3.10.5_FA.md
-TEST_CHECKLIST_V3.10.6_FA.md
-UPLOAD_TO_GITHUB.md
+CORE:
 app/build.gradle.kts
-app/proguard-rules.pro
 app/src/main/AndroidManifest.xml
 app/src/main/java/ir/promptall/app/MainActivity.kt
-app/src/main/java/ir/promptall/app/PromptAllApplication.kt
 app/src/main/java/ir/promptall/app/ai/AiImageScreens.kt
 app/src/main/java/ir/promptall/app/ai/AiImageViewModel.kt
-app/src/main/java/ir/promptall/app/data/GeminiImageSearchClient.kt
-app/src/main/java/ir/promptall/app/data/ImageFingerprint.kt
-app/src/main/java/ir/promptall/app/data/ImageLabelAnalyzer.kt
-app/src/main/java/ir/promptall/app/data/local/Favorite.kt
 app/src/main/java/ir/promptall/app/data/remote/AiImageApi.kt
-app/src/main/java/ir/promptall/app/data/remote/PromptApi.kt
-app/src/main/java/ir/promptall/app/ui/PromptViewModel.kt
-app/src/main/java/ir/promptall/app/ui/theme/Theme.kt
-app/src/main/res/drawable/ic_launcher_foreground.xml
-app/src/main/res/values/strings.xml
-app/src/main/res/values/themes.xml
-app/src/main/res/xml/file_paths.xml
-build.gradle.kts
-gradle.properties
-settings.gradle.kts
+
+RELEASE:
+RELEASE_V3.10.7_FA.md
+TEST_CHECKLIST_V3.10.7_FA.md
+README_FULL_CHECKPOINT_FA.md
+
+Base fixes retained from v3.10.6:
+- Bazaar already-owned purchase recovery
+- server-side Bazaar token validation
+- superseded pending cleanup
+- safe purchase recovery / consume / generate flow

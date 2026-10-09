@@ -225,6 +225,22 @@ private fun PromptAllApp(
     var detailHistory by remember { mutableStateOf<List<DetailEntry>>(emptyList()) }
     val context = LocalContext.current
     val aiVm: AiImageViewModel = viewModel()
+
+    fun openAiGenerator(item: PromptDto) {
+        aiVm.checkGenerationAvailability { allowed, message ->
+            if (allowed) {
+                aiVm.enterPrompt(item.id)
+                aiGeneratePrompt = item
+            } else {
+                Toast.makeText(
+                    context,
+                    message.ifBlank { "متأسفانه فعلاً این قابلیت در دسترس نیست." },
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+        }
+    }
+
     val displayPreferences = remember {
         context.getSharedPreferences("promptall_display", Context.MODE_PRIVATE)
     }
@@ -436,7 +452,7 @@ private fun PromptAllApp(
                 },
                 onRetrySimilar = { vm.loadSimilarPrompts(activePrompt, detailSourceCategory) },
                 onSimilarClick = openSimilarDetail,
-                onGenerate = { aiGeneratePrompt = it },
+                onGenerate = { openAiGenerator(it) },
             )
         } else {
             if (selected == 3 && state.categoryFeedSlug != null) {
@@ -463,7 +479,7 @@ private fun PromptAllApp(
                     onLoadMore = vm::loadMoreHome,
                     onFavorite = vm::toggleFavorite,
                     onOpenPrompt = { item -> openPromptDetail(item, state.selectedCategory) },
-                    onGeneratePrompt = { item -> aiGeneratePrompt = item },
+                    onGeneratePrompt = { item -> openAiGenerator(item) },
                     onSearchClick = {
                         searchImageFirst = false
                         selected = 1
@@ -527,7 +543,7 @@ private fun PromptAllApp(
                     onLoadMore = vm::loadMoreSearch,
                     onFavorite = vm::toggleFavorite,
                     onOpenPrompt = { item -> openPromptDetail(item, null) },
-                    onGeneratePrompt = { item -> aiGeneratePrompt = item },
+                    onGeneratePrompt = { item -> openAiGenerator(item) },
                     imageSearch = state.imageSearch,
                     onSearchImage = { uri ->
                         vm.setQuery("")
@@ -553,7 +569,7 @@ private fun PromptAllApp(
                     onLoadMore = {},
                     onFavorite = vm::toggleFavorite,
                     onOpenPrompt = { item -> openPromptDetail(item, null) },
-                    onGeneratePrompt = { item -> aiGeneratePrompt = item },
+                    onGeneratePrompt = { item -> openAiGenerator(item) },
                     emptyText = "هنوز پرامپتی ذخیره نکرده‌اید.",
                 )
 
@@ -580,7 +596,7 @@ private fun PromptAllApp(
                             onLoadMore = vm::loadMoreCategory,
                             onFavorite = vm::toggleFavorite,
                             onOpenPrompt = { item -> openPromptDetail(item, activeSlug) },
-                            onGeneratePrompt = { item -> aiGeneratePrompt = item },
+                            onGeneratePrompt = { item -> openAiGenerator(item) },
                             onBackClick = vm::closeCategory,
                         )
                     } else {
