@@ -1439,7 +1439,7 @@ private fun saveImageToGallery(context: Context, url: String, id: Long) {
         val result = runCatching {
             val request = Request.Builder()
                 .url(url)
-                .header("User-Agent", "PromptAll-Android/3.10.7")
+                .header("User-Agent", "PromptAll-Android/3.10.8")
                 .build()
             imageSaveClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) throw IOException("HTTP ${response.code}")

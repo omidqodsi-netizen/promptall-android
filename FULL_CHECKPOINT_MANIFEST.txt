@@ -1,6 +1,6 @@
-PromptAll Android v3.10.7 FULL SOURCE
-versionCode=31007
-companion_plugin=PromptAll AI Image Generator v1.0.29
+PromptAll Android v3.10.8 FULL SOURCE
+versionCode=31008
+companion_plugin=PromptAll AI Image Generator v1.0.30
 
 CORE:
 app/build.gradle.kts
@@ -11,8 +11,8 @@ app/src/main/java/ir/promptall/app/ai/AiImageViewModel.kt
 app/src/main/java/ir/promptall/app/data/remote/AiImageApi.kt
 
 RELEASE:
-RELEASE_V3.10.7_FA.md
-TEST_CHECKLIST_V3.10.7_FA.md
+RELEASE_V3.10.8_FA.md
+TEST_CHECKLIST_V3.10.8_FA.md
 README_FULL_CHECKPOINT_FA.md
 
 Base fixes retained from v3.10.6:

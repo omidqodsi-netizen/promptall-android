@@ -624,7 +624,12 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
                 )
                 loadHistory()
             }.onFailure { error ->
-                if (isAmbiguousNetworkFailure(error)) {
+                // A timeout / dropped connection does not mean generation failed. A 409
+                // can also simply mean the first request is still running on the server.
+                // Reconcile with the authoritative server state instead of surfacing a
+                // false failure or starting another paid flow.
+                val httpCode = (error as? HttpException)?.code()
+                if (isAmbiguousNetworkFailure(error) || httpCode in setOf(408, 409, 499, 504, 520, 522, 524)) {
                     reconcileAmbiguousGeneration(pending)
                 } else {
                     _state.value = _state.value.copy(
@@ -679,32 +684,66 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
         _state.value = _state.value.copy(
             generating = false,
             reconciling = true,
-            checkoutStage = "پاسخ ساخت دیر رسید؛ در حال بررسی نتیجه روی سرور…",
+            checkoutStage = "ساخت روی سرور ادامه دارد؛ نتیجه به‌صورت خودکار بررسی می‌شود…",
             error = null,
             generationPostId = pending.postId,
             activePurchaseId = pending.purchaseId,
         )
-        repeat(8) { attempt ->
+
+        // Provider generation can take well over a minute. Keep polling the small
+        // status endpoint instead of giving up after ~16 seconds and leaving the user
+        // with a misleading ambiguous-result message.
+        repeat(90) { attempt ->
             val status = runCatching { api.purchaseStatus(identity.token(), pending.purchaseId) }.getOrNull()
             if (status != null) {
                 if (applyPurchaseStatus(pending, status)) return
-                if (status.status == "generation_failed") {
-                    _state.value = _state.value.copy(
-                        reconciling = false,
-                        checkoutStage = null,
-                        generationPostId = null,
-                        error = status.errorMessage.ifBlank { "ساخت قبلی ناموفق بود؛ بدون پرداخت مجدد دوباره تلاش کنید." },
-                    )
-                    return
+
+                when (status.status) {
+                    "generation_failed" -> {
+                        _state.value = _state.value.copy(
+                            reconciling = false,
+                            checkoutStage = null,
+                            generationPostId = null,
+                            activePurchaseId = pending.purchaseId,
+                            error = status.errorMessage.ifBlank { "ساخت قبلی کامل نشد؛ بدون پرداخت مجدد دوباره تلاش کنید." },
+                        )
+                        return
+                    }
+                    "consumed" -> {
+                        // The server released an orphaned/stale generation lock. The
+                        // same paid credit is ready again, so retry automatically.
+                        _state.value = _state.value.copy(
+                            reconciling = false,
+                            checkoutStage = "در حال ادامه ساخت بدون پرداخت مجدد…",
+                            generationPostId = null,
+                            error = null,
+                        )
+                        generate(pending.postId, pending.purchaseId)
+                        return
+                    }
+                    "used" -> {
+                        _state.value = _state.value.copy(
+                            reconciling = false,
+                            checkoutStage = null,
+                            generationPostId = null,
+                            error = if (status.imageUrl.isBlank()) "ساخت پایان یافته است؛ خروجی را در «تصاویر من» بررسی کنید." else null,
+                        )
+                        loadHistory()
+                        return
+                    }
                 }
             }
-            if (attempt < 7) delay(2_000L)
+
+            if (attempt < 89) {
+                delay(if (attempt < 14) 2_000L else 3_000L)
+            }
         }
+
         _state.value = _state.value.copy(
             reconciling = false,
             checkoutStage = null,
             generationPostId = null,
-            error = "درخواست ساخت روی سرور ثبت شده اما نتیجه هنوز قطعی نیست. پرداخت شما محفوظ است؛ کمی بعد «بررسی نتیجه» را بزنید.",
+            error = "ساخت هنوز روی سرور در حال انجام است. پرداخت دوباره لازم نیست؛ کمی بعد «بررسی نتیجه» یا «ادامه بدون پرداخت مجدد» را بزنید.",
         )
     }
 
