@@ -42,6 +42,12 @@ interface AiImageApi {
         @Query("purchase_id") purchaseId: Long,
     ): PurchaseStatusResponse
 
+    @POST("wp-json/promptall-ai/v1/app/purchase/replace")
+    suspend fun replacePurchase(
+        @Header("X-PromptAll-App-Token") token: String,
+        @Body request: ReplacePurchaseRequest,
+    ): ReplacePurchaseResponse
+
     @Multipart
     @POST("wp-json/promptall-ai/v1/app/generate")
     suspend fun generate(
@@ -113,6 +119,18 @@ data class ConsumedPurchaseRequest(
     @SerializedName("purchase_token") val purchaseToken: String,
 )
 
+data class ReplacePurchaseRequest(
+    @SerializedName("purchase_id") val purchaseId: Long,
+    @SerializedName("post_id") val postId: Long,
+)
+
+data class ReplacePurchaseResponse(
+    val success: Boolean = false,
+    val purchaseId: Long = 0,
+    val postId: Long = 0,
+    val status: String = "",
+)
+
 data class BasicSuccessResponse(
     val success: Boolean = false,
     val verified: Boolean = false,
@@ -133,6 +151,8 @@ data class PurchaseStatusResponse(
     val generationId: Long = 0,
     val imageUrl: String = "",
     val errorMessage: String = "",
+    val promptTitle: String = "",
+    val promptImageUrl: String = "",
     val profile: AiProfile? = null,
 )
 

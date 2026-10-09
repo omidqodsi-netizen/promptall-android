@@ -17,6 +17,7 @@ import ir.promptall.app.data.remote.PreparePurchaseResponse
 import ir.promptall.app.data.remote.PromptDto
 import ir.promptall.app.data.remote.PromptImage
 import ir.promptall.app.data.remote.PurchaseStatusResponse
+import ir.promptall.app.data.remote.ReplacePurchaseRequest
 import ir.promptall.app.data.remote.VerifyPurchaseRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -229,6 +230,94 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
         refreshPendingState(activeId = null)
     }
 
+    fun replacePendingPurchaseForPrompt(
+        pending: PendingAiPurchase,
+        prompt: PromptDto,
+        onReady: (PendingAiPurchase) -> Unit,
+        onCannotReuse: (() -> Unit)? = null,
+    ) {
+        val token = identity.token()
+        if (token.isBlank()) {
+            initialize()
+            _state.value = _state.value.copy(error = "نشست برنامه هنوز آماده نیست؛ چند لحظه دیگر دوباره تلاش کنید.")
+            return
+        }
+        if (!hasReference()) {
+            _state.value = _state.value.copy(error = "اول یک عکس واضح از چهره خودتان انتخاب کنید.")
+            return
+        }
+        viewModelScope.launch {
+            _state.value = _state.value.copy(
+                checkoutStage = "در حال انتقال ساخت قبلی به این پرامپت…",
+                error = null,
+            )
+            try {
+                api.replacePurchase(
+                    token,
+                    ReplacePurchaseRequest(pending.purchaseId, prompt.id),
+                )
+                identity.replacePendingPurchase(
+                    id = pending.purchaseId,
+                    post = prompt,
+                    referencePath = _state.value.referencePath ?: identity.pendingReferencePath(),
+                    referenceMime = _state.value.referenceMime.ifBlank { identity.pendingReferenceMime() },
+                )
+                refreshPendingState(activeId = pending.purchaseId)
+                val updated = identity.pendingPurchaseById(pending.purchaseId)
+                _state.value = _state.value.copy(checkoutStage = null, error = null)
+                if (updated != null) {
+                    onReady(updated)
+                } else {
+                    _state.value = _state.value.copy(error = "اطلاعات ساخت جایگزین روی دستگاه پیدا نشد.")
+                }
+            } catch (error: Throwable) {
+                val http = error as? HttpException
+                if (http?.code() == 409) {
+                    val latest = runCatching { api.purchaseStatus(token, pending.purchaseId) }.getOrNull()
+                    when {
+                        latest?.status == "used" || latest?.completed == true -> {
+                            identity.removePendingPurchase(pending.purchaseId)
+                            refreshPendingState(activeId = null)
+                            _state.value = _state.value.copy(checkoutStage = null, error = null)
+                            onCannotReuse?.invoke()
+                        }
+                        latest?.status == "generating" -> {
+                            _state.value = _state.value.copy(
+                                checkoutStage = null,
+                                error = "ساخت پرامپت قبلی همین حالا روی سرور در حال انجام است. بعد از پایان ساخت می‌توانید پرامپت جدید را بسازید.",
+                            )
+                        }
+                        else -> {
+                            _state.value = _state.value.copy(
+                                checkoutStage = null,
+                                error = humanError(error, "جایگزینی پرامپت قبلی انجام نشد."),
+                            )
+                        }
+                    }
+                } else {
+                    _state.value = _state.value.copy(
+                        checkoutStage = null,
+                        error = humanError(error, "جایگزینی پرامپت قبلی انجام نشد."),
+                    )
+                }
+            }
+        }
+    }
+
+    fun refreshPendingPurchase(pending: PendingAiPurchase, surfaceCompletedResult: Boolean = false) {
+        val token = identity.token()
+        if (token.isBlank()) return
+        viewModelScope.launch {
+            val status = runCatching { api.purchaseStatus(token, pending.purchaseId) }.getOrNull() ?: return@launch
+            applyPurchaseStatus(
+                pending = pending,
+                status = status,
+                showMissingCompletedError = false,
+                surfaceCompletedResult = surfaceCompletedResult,
+            )
+        }
+    }
+
     fun preparePurchase(prompt: PromptDto, onReady: (PreparePurchaseResponse) -> Unit) {
         val token = identity.token()
         if (token.isBlank()) {
@@ -311,6 +400,13 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
                     ),
                 )
             }.onSuccess {
+                identity.removeDuplicateReceiptPendings(
+                    keepId = prepared.purchaseId,
+                    productId = prepared.productId,
+                    payload = purchase.payload,
+                    purchaseToken = purchase.purchaseToken,
+                )
+                refreshPendingState(activeId = prepared.purchaseId)
                 _state.value = _state.value.copy(checkoutStage = "پرداخت تأیید شد؛ آماده‌سازی ساخت…")
                 onVerified()
             }.onFailure {
@@ -566,35 +662,92 @@ class AiImageViewModel(application: Application) : AndroidViewModel(application)
         )
     }
 
-    private fun applyPurchaseStatus(pending: PendingAiPurchase, status: PurchaseStatusResponse): Boolean {
+    private fun applyPurchaseStatus(
+        pending: PendingAiPurchase,
+        status: PurchaseStatusResponse,
+        showMissingCompletedError: Boolean = true,
+        surfaceCompletedResult: Boolean = true,
+    ): Boolean {
         if (status.postId != 0L && status.postId != pending.postId) return false
+
+        identity.refreshPendingPromptMetadata(
+            id = pending.purchaseId,
+            title = status.promptTitle,
+            imageUrl = status.promptImageUrl,
+        )
+
         if (status.completed && status.imageUrl.isNotBlank()) {
+            identity.removePendingPurchase(pending.purchaseId)
+            _state.value = if (surfaceCompletedResult) {
+                _state.value.copy(
+                    generating = false,
+                    reconciling = false,
+                    checkoutStage = null,
+                    resultUrl = status.imageUrl,
+                    profile = status.profile ?: _state.value.profile,
+                    activePurchaseId = null,
+                    pendingPurchases = identity.recoverablePendingPurchases(),
+                    error = null,
+                )
+            } else {
+                _state.value.copy(
+                    activePurchaseId = null,
+                    pendingPurchases = identity.recoverablePendingPurchases(),
+                )
+            }
+            loadHistory()
+            return true
+        }
+
+        if (status.status == "superseded") {
             identity.removePendingPurchase(pending.purchaseId)
             _state.value = _state.value.copy(
                 generating = false,
                 reconciling = false,
                 checkoutStage = null,
-                resultUrl = status.imageUrl,
-                profile = status.profile ?: _state.value.profile,
                 activePurchaseId = null,
                 pendingPurchases = identity.recoverablePendingPurchases(),
-                error = null,
             )
-            loadHistory()
-            return true
+            return false
         }
+
+        // A used purchase can never be continued, even if an old/missing generation row
+        // prevents imageUrl from being returned. Never keep it as a fake "previous prompt".
+        if (status.status == "used") {
+            identity.removePendingPurchase(pending.purchaseId)
+            _state.value = _state.value.copy(
+                generating = false,
+                reconciling = false,
+                checkoutStage = null,
+                activePurchaseId = null,
+                pendingPurchases = identity.recoverablePendingPurchases(),
+                error = if (showMissingCompletedError && status.imageUrl.isBlank()) {
+                    "ساخت قبلی پایان یافته است و دیگر خرید نیمه‌تمام محسوب نمی‌شود. خروجی را در «تصاویر من» بررسی کنید."
+                } else _state.value.error,
+            )
+            if (status.imageUrl.isNotBlank()) loadHistory()
+            return status.imageUrl.isNotBlank()
+        }
+
         refreshPendingState(activeId = pending.purchaseId)
         return false
     }
 
     private fun syncPendingPurchasesSilently() {
-        val pending = identity.recoverablePendingPurchases().filter { !it.purchaseToken.isNullOrBlank() }
+        val pending = identity.recoverablePendingPurchases()
         if (pending.isEmpty()) return
         viewModelScope.launch {
-            pending.take(8).forEach { purchase ->
+            pending.take(20).forEach { purchase ->
                 val status = runCatching { api.purchaseStatus(identity.token(), purchase.purchaseId) }.getOrNull()
-                if (status?.completed == true && status.imageUrl.isNotBlank()) {
-                    identity.removePendingPurchase(purchase.purchaseId)
+                if (status != null) {
+                    identity.refreshPendingPromptMetadata(
+                        id = purchase.purchaseId,
+                        title = status.promptTitle,
+                        imageUrl = status.promptImageUrl,
+                    )
+                    if (status.status == "used" || status.status == "superseded" || (status.completed && status.imageUrl.isNotBlank())) {
+                        identity.removePendingPurchase(purchase.purchaseId)
+                    }
                 }
             }
             refreshPendingState(activeId = null)
@@ -683,7 +836,9 @@ private class AiAppIdentity(context: Context) {
             payload = payload,
             purchaseToken = null,
             orderId = null,
-            flowStarted = false,
+            // Keep the prepared request recoverable immediately. The old false value
+            // could be purged by recoverablePendingPurchases() before Bazaar opened.
+            flowStarted = true,
             createdAt = System.currentTimeMillis(),
             referencePath = referencePath,
             referenceMime = referenceMime,
@@ -702,6 +857,33 @@ private class AiAppIdentity(context: Context) {
     fun savePendingPurchaseReceipt(id: Long, purchaseToken: String, orderId: String) =
         updatePurchase(id) { it.copy(purchaseToken = purchaseToken, orderId = orderId, flowStarted = true) }
 
+    fun replacePendingPurchase(
+        id: Long,
+        post: PromptDto,
+        referencePath: String?,
+        referenceMime: String,
+    ) = updatePurchase(id) { current ->
+        current.copy(
+            postId = post.id,
+            referencePath = referencePath ?: current.referencePath,
+            referenceMime = referenceMime.ifBlank { current.referenceMime },
+            promptTitle = post.title,
+            promptText = post.promptText,
+            promptImageUrl = post.image.url,
+            promptImageWidth = post.image.width,
+            promptImageHeight = post.image.height,
+            categoryName = post.categoryName,
+            categorySlug = post.categorySlug,
+        )
+    }
+
+    fun refreshPendingPromptMetadata(id: Long, title: String, imageUrl: String) = updatePurchase(id) { current ->
+        current.copy(
+            promptTitle = title.ifBlank { current.promptTitle },
+            promptImageUrl = imageUrl.ifBlank { current.promptImageUrl },
+        )
+    }
+
     fun pendingPurchaseById(id: Long): PendingAiPurchase? = recoverablePendingPurchases().firstOrNull { it.purchaseId == id }
 
     fun recoverablePendingPurchases(): List<PendingAiPurchase> {
@@ -714,6 +896,23 @@ private class AiAppIdentity(context: Context) {
 
     fun removePendingPurchase(id: Long) {
         savePendingList(allPendingPurchases().filterNot { it.purchaseId == id })
+    }
+
+    fun removeDuplicateReceiptPendings(
+        keepId: Long,
+        productId: String,
+        payload: String,
+        purchaseToken: String,
+    ) {
+        val normalizedPayload = payload.trim()
+        val normalizedToken = purchaseToken.trim()
+        val filtered = allPendingPurchases().filterNot { pending ->
+            if (pending.purchaseId == keepId || pending.productId != productId) return@filterNot false
+            val samePayload = normalizedPayload.isNotBlank() && pending.payload == normalizedPayload
+            val sameToken = normalizedToken.isNotBlank() && pending.purchaseToken == normalizedToken
+            samePayload || sameToken
+        }
+        savePendingList(filtered)
     }
 
     private fun updatePurchase(id: Long, block: (PendingAiPurchase) -> PendingAiPurchase) {

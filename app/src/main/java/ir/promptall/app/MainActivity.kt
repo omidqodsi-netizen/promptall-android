@@ -381,8 +381,8 @@ private fun PromptAllApp(
                 onBack = { aiGeneratePrompt = null },
                 onOpenProfile = { aiGeneratePrompt = null; showAiProfile = true },
                 onOpenPrompt = { previous ->
-                    aiGeneratePrompt = null
-                    openPromptDetail(previous, previous.categorySlug)
+                    aiVm.clearResult(keepReference = true)
+                    aiGeneratePrompt = previous
                 },
             )
         } else if (showAiProfile) {

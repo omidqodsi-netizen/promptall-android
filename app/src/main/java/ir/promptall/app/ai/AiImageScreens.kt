@@ -51,6 +51,7 @@ import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ShoppingBag
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -164,6 +165,7 @@ class BazaarBillingManager(private val activity: ComponentActivity) {
         prepared: PreparePurchaseResponse,
         onStarted: () -> Unit,
         onSuccess: (PurchaseInfo) -> Unit,
+        onOwnedPurchase: (PurchaseInfo) -> Unit,
         onCanceled: () -> Unit,
         onFailure: (String?) -> Unit,
     ) {
@@ -177,16 +179,47 @@ class BazaarBillingManager(private val activity: ComponentActivity) {
             request = PurchaseRequest(productId = prepared.productId, payload = prepared.payload),
         ) {
             purchaseFlowBegan { onStarted() }
-            failedToBeginFlow {
-                onFailure(
-                    it.message?.takeIf { message -> message.isNotBlank() }
-                        ?.let { message -> "صفحه پرداخت کافه‌بازار باز نشد: $message" }
-                        ?: "صفحه پرداخت کافه‌بازار باز نشد. اتصال بازار و وضعیت محصول را بررسی کنید."
+            failedToBeginFlow { failure ->
+                recoverOwnedProduct(
+                    productId = prepared.productId,
+                    onFound = onOwnedPurchase,
+                    onMissing = {
+                        onFailure(
+                            failure.message?.takeIf { message -> message.isNotBlank() }
+                                ?.let { message -> "صفحه پرداخت کافه‌بازار باز نشد: $message" }
+                                ?: "صفحه پرداخت کافه‌بازار باز نشد. اتصال بازار و وضعیت محصول را بررسی کنید."
+                        )
+                    },
                 )
             }
             purchaseSucceed { onSuccess(it) }
             purchaseCanceled { onCanceled() }
-            purchaseFailed { onFailure(it.message) }
+            purchaseFailed { failure ->
+                // A consumable that was paid but not consumed is reported by Bazaar
+                // as already owned on the next purchase attempt. Query owned purchases
+                // and recover that receipt instead of turning it into a new-payment error.
+                recoverOwnedProduct(
+                    productId = prepared.productId,
+                    onFound = onOwnedPurchase,
+                    onMissing = { onFailure(failure.message) },
+                )
+            }
+        }
+    }
+
+    private fun recoverOwnedProduct(
+        productId: String,
+        onFound: (PurchaseInfo) -> Unit,
+        onMissing: () -> Unit,
+    ) {
+        val p = payment ?: return onMissing()
+        if (connection?.getState() != ConnectionState.Connected) return onMissing()
+        p.getPurchasedProducts {
+            querySucceed { purchases ->
+                val owned = purchases.firstOrNull { it.productId == productId }
+                if (owned != null) onFound(owned) else onMissing()
+            }
+            queryFailed { onMissing() }
         }
     }
 
@@ -270,6 +303,13 @@ fun AiGenerateScreen(
         .filter { it.postId != prompt.id }
         .maxByOrNull { it.createdAt }
 
+    LaunchedEffect(pending?.purchaseId) {
+        pending?.let { vm.refreshPendingPurchase(it, surfaceCompletedResult = true) }
+    }
+    LaunchedEffect(otherPending?.purchaseId) {
+        otherPending?.let { vm.refreshPendingPurchase(it, surfaceCompletedResult = false) }
+    }
+
     fun finishConsumeAndGenerate(p: PendingAiPurchase, token: String) {
         billing.consume(
             purchaseToken = token,
@@ -290,7 +330,7 @@ fun AiGenerateScreen(
         )
     }
 
-    fun recoverPurchase(p: PendingAiPurchase) {
+    fun recoverPurchase(p: PendingAiPurchase, onUnavailable: (() -> Unit)? = null) {
         if (!bazaarConnected || recoveryBusy) return
         recoveryBusy = true
         val token = p.purchaseToken
@@ -301,7 +341,11 @@ fun AiGenerateScreen(
         billing.findPendingPurchase(p.productId, p.payload) { purchase, error ->
             if (purchase == null) {
                 recoveryBusy = false
-                vm.showError(error ?: "خرید نیمه‌تمام در حساب بازار پیدا نشد.")
+                if (onUnavailable != null) {
+                    onUnavailable()
+                } else {
+                    vm.showError(error ?: "خرید نیمه‌تمام در حساب بازار پیدا نشد.")
+                }
             } else {
                 vm.verifyRecoveredPurchase(p, purchase) {
                     finishConsumeAndGenerate(p, purchase.purchaseToken)
@@ -321,6 +365,14 @@ fun AiGenerateScreen(
                             ?.takeIf { it.purchaseId == prepared.purchaseId }
                         if (p != null) finishConsumeAndGenerate(p, purchase.purchaseToken)
                         else vm.showError("اطلاعات خرید روی دستگاه پیدا نشد؛ پرداخت شما روی سرور قابل پیگیری است.")
+                    }
+                },
+                onOwnedPurchase = { purchase ->
+                    vm.verifyPurchase(prepared, purchase) {
+                        val p = vm.pendingPurchaseFor(prompt.id)
+                            ?.takeIf { it.purchaseId == prepared.purchaseId }
+                        if (p != null) finishConsumeAndGenerate(p, purchase.purchaseToken)
+                        else vm.showError("خرید قبلی پیدا شد اما اطلاعات ادامه ساخت روی دستگاه کامل نیست.")
                     }
                 },
                 onCanceled = { vm.purchaseCancelled(prepared.purchaseId) },
@@ -441,8 +493,24 @@ fun AiGenerateScreen(
                                 item {
                                     OtherPendingPurchaseCard(
                                         pending = otherPending,
+                                        busy = recoveryBusy || state.checkoutStage != null,
                                         onOpenPrevious = { onOpenPrompt(otherPending.toPromptDto()) },
-                                        onStartFresh = ::startNewPurchase,
+                                        onReplace = {
+                                            vm.replacePendingPurchaseForPrompt(
+                                                pending = otherPending,
+                                                prompt = prompt,
+                                                onReady = { replaced ->
+                                                    recoverPurchase(
+                                                        replaced,
+                                                        onUnavailable = {
+                                                            vm.abandonPendingPurchase(replaced.purchaseId)
+                                                            startNewPurchase()
+                                                        },
+                                                    )
+                                                },
+                                                onCannotReuse = ::startNewPurchase,
+                                            )
+                                        },
                                     )
                                 }
                             }
@@ -950,8 +1018,9 @@ private fun RecoveryCard(
 @Composable
 private fun OtherPendingPurchaseCard(
     pending: PendingAiPurchase,
+    busy: Boolean,
     onOpenPrevious: () -> Unit,
-    onStartFresh: () -> Unit,
+    onReplace: () -> Unit,
 ) {
     Surface(
         Modifier.fillMaxWidth(),
@@ -975,7 +1044,7 @@ private fun OtherPendingPurchaseCard(
                 }
                 Spacer(Modifier.weight(1f))
                 Column(horizontalAlignment = Alignment.End, modifier = Modifier.weight(2f)) {
-                    Text("یک ساخت قبلی هنوز باز است", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                    Text("یک ساخت نیمه‌تمام دارید", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
                     Text(
                         pending.promptTitle.ifBlank { "پرامپت #${pending.postId}" },
                         color = AiOrange,
@@ -988,27 +1057,30 @@ private fun OtherPendingPurchaseCard(
             }
             Spacer(Modifier.height(10.dp))
             Text(
-                "خرید قبلی برای همان پرامپت محفوظ می‌ماند. می‌توانید برگردید و ادامه‌اش دهید یا برای این پرامپت یک خرید تازه شروع کنید.",
+                "ساخت یک پرامپت را دارید؛ می‌خواهید به‌جای آن این پرامپت را بسازید؟ اگر جایگزین کنید، همان خرید/اعتبار قبلی برای این پرامپت استفاده می‌شود و پرداخت دوباره لازم نیست.",
                 color = AiMuted,
                 fontSize = 9.5.sp,
                 textAlign = TextAlign.Right,
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(12.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onOpenPrevious, modifier = Modifier.weight(1f).height(50.dp)) {
-                    Icon(Icons.Default.Restore, null, modifier = Modifier.size(17.dp))
-                    Spacer(Modifier.width(5.dp))
-                    Text("پرامپت قبلی", fontWeight = FontWeight.Bold, fontSize = 10.sp)
-                }
+            if (busy) {
+                BusyButton("در حال بررسی و جایگزینی ساخت…")
+            } else {
                 Button(
-                    onClick = onStartFresh,
-                    modifier = Modifier.weight(1f).height(50.dp),
+                    onClick = onReplace,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = AiPurpleStrong),
                 ) {
-                    Icon(Icons.Default.ShoppingBag, null, modifier = Modifier.size(17.dp))
+                    Icon(Icons.Default.SwapHoriz, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("بله، این پرامپت را جایگزین کن", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = onOpenPrevious, modifier = Modifier.fillMaxWidth().height(48.dp)) {
+                    Icon(Icons.Default.Restore, null, modifier = Modifier.size(17.dp))
                     Spacer(Modifier.width(5.dp))
-                    Text("خرید برای این تصویر", fontWeight = FontWeight.Bold, fontSize = 10.sp)
+                    Text("ادامه ساخت پرامپت قبلی", fontWeight = FontWeight.Bold, fontSize = 10.sp)
                 }
             }
         }

@@ -1,5 +1,5 @@
-PromptAll Android v3.10.4 FULL SOURCE
-Files: 53
+PromptAll Android v3.10.6 FULL SOURCE
+Files: 57
 
 .github/workflows/build-apk.yml
 CAFE_BAZAAR_SETUP_FA.md
@@ -12,6 +12,8 @@ RELEASE_V3.10.1_FA.md
 RELEASE_V3.10.2_FA.md
 RELEASE_V3.10.3_FA.md
 RELEASE_V3.10.4_FA.md
+RELEASE_V3.10.5_FA.md
+RELEASE_V3.10.6_FA.md
 RELEASE_V3.5.0.md
 RELEASE_V3.6.0.md
 RELEASE_V3.6.1.md
@@ -31,6 +33,8 @@ SMOKE_TEST_V3.9.0.md
 SMOKE_TEST_V3.9.1.md
 TEST_CHECKLIST_FA.md
 TEST_CHECKLIST_V3.10.4_FA.md
+TEST_CHECKLIST_V3.10.5_FA.md
+TEST_CHECKLIST_V3.10.6_FA.md
 UPLOAD_TO_GITHUB.md
 app/build.gradle.kts
 app/proguard-rules.pro
