@@ -28,6 +28,9 @@ jobs:
         with:
           gradle-version: "8.11.1"
 
+      - name: Apply Bazaar billing recovery fix (3.10.10)
+        run: python3 apply_bazaar_fix.py
+
       - name: Restore release signing key
         env:
           KEYSTORE_BASE64: ${{ secrets.PROMPTALL_KEYSTORE_BASE64 }}
@@ -51,15 +54,18 @@ jobs:
       - name: Collect output
         shell: bash
         run: |
+          set -euo pipefail
+          VERSION="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n1)"
+          test -n "$VERSION"
           mkdir -p release
-          cp app/build/outputs/apk/release/app-release.apk release/promptAll-v3.0.1-bazaar.apk
-          cp app/build/outputs/bundle/release/app-release.aab release/promptAll-v3.0.1-bazaar.aab
-          cp app/build/outputs/mapping/release/mapping.txt release/mapping-v3.0.1.txt
+          cp app/build/outputs/apk/release/app-release.apk "release/promptAll-v${VERSION}-release.apk"
+          cp app/build/outputs/bundle/release/app-release.aab "release/promptAll-v${VERSION}-release.aab"
+          cp app/build/outputs/mapping/release/mapping.txt "release/mapping-v${VERSION}.txt"
 
       - name: Upload market release
         uses: actions/upload-artifact@v4
         with:
-          name: promptAll-v3.0.1-bazaar-release
+          name: promptAll-market-release
           path: release/
           if-no-files-found: error
           retention-days: 90
